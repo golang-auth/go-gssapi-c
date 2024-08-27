@@ -36,7 +36,7 @@ type Credential struct {
 	id C.gss_cred_id_t
 }
 
-func (library) AcquireCredential(name g.GssName, mechs []g.GssMech, usage g.CredUsage, lifetime time.Duration) (g.Credential, error) {
+func (provider) AcquireCredential(name g.GssName, mechs []g.GssMech, usage g.CredUsage, lifetime time.Duration) (g.Credential, error) {
 	// turn the mechs into an array of OIDs
 	gssOidSet := gssOidSetFromOids(mechsToOids(mechs))
 	gssOidSet.Pin()
