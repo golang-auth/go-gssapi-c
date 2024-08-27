@@ -9,19 +9,18 @@ import (
 // #cgo LDFLAGS: -lgssapi_krb5
 import "C"
 
-
 const LIBID = "GSSAPI-C"
 
 func init() {
 	g.RegisterProvider(LIBID, New)
 }
 
-type library struct {
+type provider struct {
 	name string
 }
 
 func New() g.Provider {
-	return &library{
+	return &provider{
 		name: LIBID,
 	}
 }
