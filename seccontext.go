@@ -19,6 +19,7 @@ type SecContext struct {
 	continueNeeded bool
 	isInitiator    bool
 	targetName     *GssName
+	mech           g.GssMech
 }
 
 func oid2Coid(oid g.Oid) C.gss_OID {
@@ -32,7 +33,7 @@ func oid2Coid(oid g.Oid) C.gss_OID {
 	}
 }
 
-func (library) InitSecContext(name g.GssName, opts ...g.InitSecContextOption) (g.SecContext, []byte, error) {
+func (provider) InitSecContext(name g.GssName, opts ...g.InitSecContextOption) (g.SecContext, []byte, error) {
 	o := g.InitSecContextOptions{}
 	for _, opt := range opts {
 		opt(&o)
@@ -86,10 +87,11 @@ func (library) InitSecContext(name g.GssName, opts ...g.InitSecContextOption) (g
 		continueNeeded: major == C.GSS_S_CONTINUE_NEEDED,
 		isInitiator:    true,
 		targetName:     lName,
+		mech:           o.Mech,
 	}, outToken, nil
 }
 
-func (library) AcceptSecContext(cred g.Credential, inputToken []byte) (g.SecContext, []byte, error) {
+func (provider) AcceptSecContext(cred g.Credential, inputToken []byte) (g.SecContext, []byte, error) {
 	// get the C cred ID and name
 	var cGssCred C.gss_cred_id_t = C.GSS_C_NO_CREDENTIAL
 	if cred != nil {
@@ -124,7 +126,7 @@ func (library) AcceptSecContext(cred g.Credential, inputToken []byte) (g.SecCont
 	}, outToken, nil
 }
 
-func (library) ImportSecContext(token []byte) (g.SecContext, error) {
+func (provider) ImportSecContext(token []byte) (g.SecContext, error) {
 	var minor C.OM_uint32
 	var cGssCtxId C.gss_ctx_id_t
 
@@ -147,8 +149,14 @@ func (c *SecContext) Continue(inputToken []byte) ([]byte, error) {
 	cInputToken, pinner := bytesToCBuffer(inputToken)
 	defer pinner.Unpin()
 
+	mech := g.Oid{}
+	if c.mech != nil {
+		mech = c.mech.Oid()
+	}
+	cMechOid := oid2Coid(mech)
+
 	if c.isInitiator {
-		major = C.gss_init_sec_context(&minor, C.GSS_C_NO_CREDENTIAL, &c.id, c.targetName.name, nil, 0, 0, nil, &cInputToken, nil, &cOutToken, nil, nil)
+		major = C.gss_init_sec_context(&minor, C.GSS_C_NO_CREDENTIAL, &c.id, c.targetName.name, cMechOid, 0, 0, nil, &cInputToken, nil, &cOutToken, nil, nil)
 	} else {
 		major = C.gss_accept_sec_context(&minor, &c.id, C.GSS_C_NO_CREDENTIAL, &cInputToken, nil, nil, nil, &cOutToken, nil, nil, nil)
 	}

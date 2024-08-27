@@ -40,7 +40,7 @@ func nameFromGssInternal(name C.gss_name_t) GssName {
 	return GssName{name}
 }
 
-func (library) ImportName(name string, nameType g.GssNameType) (g.GssName, error) {
+func (provider) ImportName(name string, nameType g.GssNameType) (g.GssName, error) {
 	nameOid := nameType.Oid()
 	var minor C.OM_uint32
 	var cGssName C.gss_name_t
@@ -53,6 +53,44 @@ func (library) ImportName(name string, nameType g.GssNameType) (g.GssName, error
 	return &GssName{
 		name: cGssName,
 	}, nil
+}
+
+func (provider) InquireNamesForMech(m g.GssMech) ([]g.GssNameType, error) {
+	cMechOid := oid2Coid(m.Oid())
+
+	var minor C.OM_uint32
+	var cNameTypes C.gss_OID_set // cNameTypes.elements allocated by GSSAPI; released by *1
+	major := C.gss_inquire_names_for_mech(&minor, cMechOid, &cNameTypes)
+
+	if major != 0 {
+		return nil, makeStatus(major, minor)
+	}
+
+	defer C.gss_release_oid_set(&minor, &cNameTypes)
+
+	nameTypeOids := oidsFromGssOidSet(cNameTypes)
+	ret := make([]g.GssNameType, 0, len(nameTypeOids))
+
+	seen := make(map[string]bool)
+
+	for _, oid := range nameTypeOids {
+		nt, err := g.NameFromOid(oid)
+		switch {
+		default:
+			ntStr := nt.String()
+			if _, ok := seen[ntStr]; !ok {
+				ret = append(ret, nt)
+				seen[nt.String()] = true
+			}
+		case errors.Is(err, g.ErrBadNameType):
+			// warn
+			continue
+		case err != nil:
+			return nil, err
+		}
+	}
+
+	return ret, nil
 }
 
 func (n *GssName) Compare(other g.GssName) (bool, error) {
