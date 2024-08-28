@@ -3,24 +3,6 @@ package gssapi
 /*
 #include <gssapi.h>
 
-gss_OID_desc GoStringToGssOID(_GoString_ s);
-
-OM_uint32 inquire_cred_by_mech (OM_uint32 *minor, const gss_cred_id_t cred_handle,  _GoString_ mechOid,
-            gss_name_t *output_name, OM_uint32 *init_life, OM_uint32 *accept_life, gss_cred_usage_t *usage) {
-	gss_OID_desc oid = GoStringToGssOID(mechOid);
-
-	return gss_inquire_cred_by_mech(minor, cred_handle, &oid, output_name, init_life, accept_life, usage);
-}
-
-OM_uint32 add_cred(OM_uint32 *minor, const gss_cred_id_t cred_handle, const gss_name_t name, _GoString_ mechOid,
-			gss_cred_usage_t usage, OM_uint32 initiator_lifetime, OM_uint32 acceptor_lifetime,
-			gss_OID_set *actual_mechs, OM_uint32 *initiator_rec, OM_uint32 *acceptor_rec) {
-	gss_OID_desc oid = GoStringToGssOID(mechOid);
-
-	return gss_add_cred(minor, cred_handle, name, &oid, usage, initiator_lifetime, acceptor_lifetime, NULL,
-		    actual_mechs, initiator_rec, acceptor_rec );
-}
-
 */
 import "C"
 
@@ -142,13 +124,13 @@ func (c *Credential) Inquire() (*g.CredInfo, error) {
 }
 
 func (c *Credential) InquireByMech(mech g.GssMech) (*g.CredInfo, error) {
-	mechOid := mech.Oid()
+	cMechOid := oid2Coid(mech.Oid())
 
 	var minor C.OM_uint32
 	var cGssName C.gss_name_t // cGssName allocated by GSSAPI; releaseed by *1
 	var cTimeRecInit, cTimeRecAcc C.OM_uint32
 	var cCredUsage C.gss_cred_usage_t
-	major := C.inquire_cred_by_mech(&minor, c.id, string(mechOid), &cGssName, &cTimeRecInit, &cTimeRecAcc, &cCredUsage)
+	major := C.gss_inquire_cred_by_mech(&minor, c.id, cMechOid, &cGssName, &cTimeRecInit, &cTimeRecAcc, &cCredUsage)
 
 	if major != 0 {
 		return nil, makeMechStatus(major, minor, mech)
@@ -190,7 +172,7 @@ func (c *Credential) InquireByMech(mech g.GssMech) (*g.CredInfo, error) {
 }
 
 func (c *Credential) Add(name g.GssName, mech g.GssMech, usage g.CredUsage, initiatorLifetime time.Duration, acceptorLifetime time.Duration) error {
-	mechOid := mech.Oid()
+	cMechOid := oid2Coid(mech.Oid())
 
 	var cGssName C.gss_name_t
 	if name != nil {
@@ -205,7 +187,7 @@ func (c *Credential) Add(name g.GssName, mech g.GssMech, usage g.CredUsage, init
 	var minor C.OM_uint32
 	var cTimeRecInit, cTimeRecAcc C.OM_uint32
 	var cActualMechs C.gss_OID_set // cActualMechs.elements allocated by GSSAPI; released by *1
-	major := C.add_cred(&minor, c.id, cGssName, string(mechOid), C.int(usage), C.OM_uint32(initiatorLifetime.Seconds()), C.OM_uint32(acceptorLifetime.Seconds()), &cActualMechs, &cTimeRecInit, &cTimeRecAcc)
+	major := C.gss_add_cred(&minor, c.id, cGssName, cMechOid, C.int(usage), C.OM_uint32(initiatorLifetime.Seconds()), C.OM_uint32(acceptorLifetime.Seconds()), nil, &cActualMechs, &cTimeRecInit, &cTimeRecAcc)
 	if major != 0 {
 		return makeMechStatus(major, minor, mech)
 	}

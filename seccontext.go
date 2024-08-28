@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"math"
 	"time"
-	"unsafe"
 
 	g "github.com/golang-auth/go-gssapi/v3"
 )
@@ -20,17 +19,6 @@ type SecContext struct {
 	isInitiator    bool
 	targetName     *GssName
 	mech           g.GssMech
-}
-
-func oid2Coid(oid g.Oid) C.gss_OID {
-	if len(oid) > 0 {
-		return &C.gss_OID_desc{
-			length:   C.OM_uint32(len(oid)),
-			elements: unsafe.Pointer(&oid[0]),
-		}
-	} else {
-		return C.GSS_C_NO_OID
-	}
 }
 
 func (provider) InitSecContext(name g.GssName, opts ...g.InitSecContextOption) (g.SecContext, []byte, error) {
@@ -82,11 +70,16 @@ func (provider) InitSecContext(name g.GssName, opts ...g.InitSecContextOption) (
 
 	outToken := C.GoBytes(cOutToken.value, C.int(cOutToken.length))
 
+	savedName, err := lName.Duplicate()
+	if err != nil {
+		return nil, nil, makeMechStatus(major, minor, o.Mech)
+	}
+
 	return &SecContext{
 		id:             cGssCtxId,
 		continueNeeded: major == C.GSS_S_CONTINUE_NEEDED,
 		isInitiator:    true,
-		targetName:     lName,
+		targetName:     savedName.(*GssName),
 		mech:           o.Mech,
 	}, outToken, nil
 }
@@ -178,6 +171,11 @@ func (c *SecContext) ContinueNeeded() bool {
 }
 
 func (c *SecContext) Delete() ([]byte, error) {
+	if c.targetName != nil {
+		c.targetName.Release()
+		c.targetName = nil
+	}
+
 	if c.id == nil {
 		return nil, nil
 	}
@@ -294,7 +292,7 @@ func (c *SecContext) Inquire() (*g.SecContextInfo, error) {
 	}, nil
 }
 
-func (c *SecContext) WrapSizeLimit(confRequired bool, maxWrapSize uint) (uint, error) {
+func (c *SecContext) WrapSizeLimit(confRequired bool, maxWrapSize uint, qop g.QoP) (uint, error) {
 	var minor C.OM_uint32
 	var cConfReq C.int
 	var cMaxInputSize C.OM_uint32
@@ -303,8 +301,11 @@ func (c *SecContext) WrapSizeLimit(confRequired bool, maxWrapSize uint) (uint, e
 	if maxWrapSize > math.MaxUint32 {
 		return 0, ErrTooLarge
 	}
+	if qop > math.MaxUint32 {
+		return 0, g.ErrBadQop
+	}
 
-	major := C.gss_wrap_size_limit(&minor, c.id, cConfReq, C.GSS_C_QOP_DEFAULT, C.OM_uint32(maxWrapSize), &cMaxInputSize)
+	major := C.gss_wrap_size_limit(&minor, c.id, cConfReq, C.gss_qop_t(qop), C.OM_uint32(maxWrapSize), &cMaxInputSize)
 	if major != 0 {
 		return 0, makeStatus(major, minor)
 	}
@@ -331,10 +332,13 @@ func (c *SecContext) Export() ([]byte, error) {
 	return outToken, nil
 }
 
-func (c *SecContext) Wrap(msgIn []byte, confReq bool) ([]byte, bool, error) {
+func (c *SecContext) Wrap(msgIn []byte, confReq bool, qop g.QoP) ([]byte, bool, error) {
 	// the C bindings support a 32 bit message size..
 	if len(msgIn) > math.MaxUint32 {
 		return nil, false, ErrTooLarge
+	}
+	if qop > math.MaxUint32 {
+		return nil, false, g.ErrBadQop
 	}
 
 	cInputMessage, pinner := bytesToCBuffer(msgIn)
@@ -347,7 +351,7 @@ func (c *SecContext) Wrap(msgIn []byte, confReq bool) ([]byte, bool, error) {
 		cConfReq = 1
 	}
 
-	major := C.gss_wrap(&minor, c.id, cConfReq, C.GSS_C_QOP_DEFAULT, &cInputMessage, &cConfState, &cOutputMessage)
+	major := C.gss_wrap(&minor, c.id, cConfReq, C.gss_qop_t(qop), &cInputMessage, &cConfState, &cOutputMessage)
 	if major != 0 {
 		return nil, false, makeStatus(major, minor)
 	}
@@ -358,10 +362,10 @@ func (c *SecContext) Wrap(msgIn []byte, confReq bool) ([]byte, bool, error) {
 	return msgOut, cConfState != 0, nil
 }
 
-func (c *SecContext) Unwrap(msgIn []byte) ([]byte, bool, error) {
+func (c *SecContext) Unwrap(msgIn []byte) ([]byte, bool, g.QoP, error) {
 	// the C bindings support a 32 bit message size..
 	if len(msgIn) > math.MaxUint32 {
-		return nil, false, ErrTooLarge
+		return nil, false, 0, ErrTooLarge
 	}
 
 	cInputMessage, pinner := bytesToCBuffer(msgIn)
@@ -370,22 +374,26 @@ func (c *SecContext) Unwrap(msgIn []byte) ([]byte, bool, error) {
 	var minor C.OM_uint32
 	var cConfState C.int
 	var cOutputMessage C.gss_buffer_desc // allocated by GSSAPI;  released by *1
+	var cQoP C.gss_qop_t
 
-	major := C.gss_unwrap(&minor, c.id, &cInputMessage, &cOutputMessage, &cConfState, nil)
+	major := C.gss_unwrap(&minor, c.id, &cInputMessage, &cOutputMessage, &cConfState, &cQoP)
 	if major != 0 {
-		return nil, false, makeStatus(major, minor)
+		return nil, false, 0, makeStatus(major, minor)
 	}
 
 	defer C.gss_release_buffer(&minor, &cOutputMessage) // *1  Release GSSAPI allocated buffer
 
 	msgOut := C.GoBytes(cOutputMessage.value, C.int(cOutputMessage.length))
-	return msgOut, cConfState != 0, nil
+	return msgOut, cConfState != 0, g.QoP(cQoP), nil
 }
 
-func (c *SecContext) GetMIC(msg []byte) ([]byte, error) {
+func (c *SecContext) GetMIC(msg []byte, qop g.QoP) ([]byte, error) {
 	// the C bindings support a 32 bit message size..
 	if len(msg) > math.MaxUint32 {
 		return nil, ErrTooLarge
+	}
+	if qop > math.MaxUint32 {
+		return nil, g.ErrBadQop
 	}
 
 	cMessage, pinner := bytesToCBuffer(msg)
@@ -393,7 +401,7 @@ func (c *SecContext) GetMIC(msg []byte) ([]byte, error) {
 
 	var minor C.OM_uint32
 	var cMsgToken C.gss_buffer_desc // allocated by GSSAPI;  released by *1
-	major := C.gss_get_mic(&minor, c.id, C.GSS_C_QOP_DEFAULT, &cMessage, &cMsgToken)
+	major := C.gss_get_mic(&minor, c.id, C.gss_qop_t(qop), &cMessage, &cMsgToken)
 	if major != 0 {
 		return nil, makeStatus(major, minor)
 	}
@@ -404,10 +412,10 @@ func (c *SecContext) GetMIC(msg []byte) ([]byte, error) {
 	return token, nil
 }
 
-func (c *SecContext) VerifyMIC(msg, token []byte) error {
+func (c *SecContext) VerifyMIC(msg, token []byte) (g.QoP, error) {
 	// the C bindings support a 32 bit message size..
 	if len(msg) > math.MaxUint32 {
-		return ErrTooLarge
+		return 0, ErrTooLarge
 	}
 
 	cMessage, pinnerMsg := bytesToCBuffer(msg)
@@ -416,6 +424,7 @@ func (c *SecContext) VerifyMIC(msg, token []byte) error {
 	defer pinnerToken.Unpin()
 
 	var minor C.OM_uint32
-	major := C.gss_verify_mic(&minor, c.id, &cMessage, &cToken, nil)
-	return makeStatus(major, minor)
+	var cQoP C.gss_qop_t
+	major := C.gss_verify_mic(&minor, c.id, &cMessage, &cToken, &cQoP)
+	return g.QoP(cQoP), makeStatus(major, minor)
 }
