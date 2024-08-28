@@ -41,6 +41,14 @@ func (ta *testAssets) Free() {
 	os.Remove(ta.ccfile)
 }
 
+// will prevent compilation if SecContext{} doesn't implement the interface
+func TestSecContextInterface(t *testing.T) {
+	s := SecContext{}
+	var gsc g.SecContext = &s
+
+	_ = gsc
+}
+
 func TestInitSecContext(t *testing.T) {
 	assert := assert.New(t)
 
@@ -203,7 +211,7 @@ func TestContextWrapSizeLimit(t *testing.T) {
 
 	// the max unwrapped token size would always be less that the max
 	// wrapped token size
-	tokSize, err := secCtxInitiator.WrapSizeLimit(true, 100)
+	tokSize, err := secCtxInitiator.WrapSizeLimit(true, 100, 0)
 	assert.NoError(err)
 	assert.Less(tokSize, uint(1000))
 }
@@ -270,20 +278,20 @@ func TestSecContextEstablishment(t *testing.T) {
 	assert.False(secCtxAcceptor.ContinueNeeded())
 
 	msg := []byte("Hello GSSAPI")
-	wrapped, hasConf, err := secCtxInitiator.Wrap(msg, true)
+	wrapped, hasConf, err := secCtxInitiator.Wrap(msg, true, 0)
 	assert.NoError(err)
 	assert.True(hasConf)
 	assert.NotEmpty(wrapped)
 
-	unwrapped, hasConf, err := secCtxAcceptor.Unwrap(wrapped)
+	unwrapped, hasConf, _, err := secCtxAcceptor.Unwrap(wrapped)
 	assert.NoError(err)
 	assert.True(hasConf)
 	assert.Equal(msg, unwrapped)
 
-	mic, err := secCtxInitiator.GetMIC(msg)
+	mic, err := secCtxInitiator.GetMIC(msg, 0)
 	assert.NoError(err)
 	assert.NotEmpty(mic)
 
-	err = secCtxAcceptor.VerifyMIC(msg, mic)
+	_, err = secCtxAcceptor.VerifyMIC(msg, mic)
 	assert.NoError(err)
 }

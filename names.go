@@ -2,26 +2,6 @@ package gssapi
 
 /*
 #include <gssapi.h>
-
-gss_OID_desc GoStringToGssOID(_GoString_ s);
-gss_buffer_desc GoStringToGssBuffer(_GoString_ s);
-
-// _GoString_ is really a convenient []byte here..
-OM_uint32 import_name(_GoString_ name, _GoString_ nameOid, OM_uint32 *minor, gss_name_t *output_name) {
-	gss_buffer_desc nameBuf = GoStringToGssBuffer(name);
-	gss_OID_desc oid = GoStringToGssOID(nameOid);
-	gss_OID pOid = oid.length > 0 ? &oid : GSS_C_NO_OID;
-
-	return gss_import_name(minor, &nameBuf, pOid, output_name);
-}
-
-OM_uint32 canonicalize_name(const gss_name_t name, _GoString_ mechOid, OM_uint32 *minor, gss_name_t *output_name) {
-	gss_OID_desc oid = GoStringToGssOID(mechOid);
-
-	return gss_canonicalize_name(minor, name, &oid, output_name);
-}
-
-
 */
 import "C"
 
@@ -41,10 +21,14 @@ func nameFromGssInternal(name C.gss_name_t) GssName {
 }
 
 func (provider) ImportName(name string, nameType g.GssNameType) (g.GssName, error) {
-	nameOid := nameType.Oid()
+	cNameOid := oid2Coid(nameType.Oid())
+
+	cNameBuf, pinner := bytesToCBuffer([]byte(name))
+	defer pinner.Unpin()
+
 	var minor C.OM_uint32
 	var cGssName C.gss_name_t
-	major := C.import_name(name, string(nameOid), &minor, &cGssName)
+	major := C.gss_import_name(&minor, &cNameBuf, cNameOid, &cGssName)
 
 	if major != 0 {
 		return nil, makeStatus(major, minor)
@@ -55,8 +39,8 @@ func (provider) ImportName(name string, nameType g.GssNameType) (g.GssName, erro
 	}, nil
 }
 
-func (provider) InquireNamesForMech(m g.GssMech) ([]g.GssNameType, error) {
-	cMechOid := oid2Coid(m.Oid())
+func (provider) InquireNamesForMech(mech g.GssMech) ([]g.GssNameType, error) {
+	cMechOid := oid2Coid(mech.Oid())
 
 	var minor C.OM_uint32
 	var cNameTypes C.gss_OID_set // cNameTypes.elements allocated by GSSAPI; released by *1
@@ -179,10 +163,11 @@ func (n *GssName) InquireMechs() ([]g.GssMech, error) {
 }
 
 func (n *GssName) Canonicalize(mech g.GssMech) (g.GssName, error) {
-	mechOid := mech.Oid()
+	cMechOid := oid2Coid(mech.Oid())
+
 	var minor C.OM_uint32
 	var cOutName C.gss_name_t
-	major := C.canonicalize_name(n.name, string(mechOid), &minor, &cOutName)
+	major := C.gss_canonicalize_name(&minor, n.name, cMechOid, &cOutName)
 	if major != 0 {
 		return nil, makeMechStatus(major, minor, mech)
 	}

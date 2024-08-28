@@ -2,21 +2,6 @@ package gssapi
 
 /*
 #include <gssapi.h>
-
-gss_OID_desc GoStringToGssOID(_GoString_ s) {
-	size_t l = _GoStringLen(s);
-	void *elms = (void*)_GoStringPtr(s);
-	gss_OID_desc oid = {l, elms};
-	return oid;
-}
-
-gss_buffer_desc GoStringToGssBuffer(_GoString_ s) {
-	size_t l = _GoStringLen(s);
-	void *value = (void*)_GoStringPtr(s);
-	gss_buffer_desc buf = {l, value};
-	return buf;
-}
-
 */
 import "C"
 
@@ -99,4 +84,15 @@ func bytesToCBuffer(b []byte) (C.gss_buffer_desc, runtime.Pinner) {
 	}
 
 	return ret, pinner
+}
+
+func oid2Coid(oid g.Oid) C.gss_OID {
+	if len(oid) > 0 {
+		return &C.gss_OID_desc{
+			length:   C.OM_uint32(len(oid)),
+			elements: unsafe.Pointer(&oid[0]),
+		}
+	} else {
+		return C.GSS_C_NO_OID
+	}
 }

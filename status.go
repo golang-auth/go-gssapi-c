@@ -9,15 +9,6 @@ import (
 
 /*
 #include <gssapi.h>
-
-gss_OID_desc GoStringToGssOID(_GoString_ s);
-
-OM_uint32 display_status(OM_uint32 status, int status_type, _GoString_ mechOid, OM_uint32 *minor, OM_uint32 *msgCtx, gss_buffer_desc *status_string) {
-	gss_OID_desc oid = GoStringToGssOID(mechOid);
-	gss_OID poid = (oid.length == 0) ? NULL : &oid;
-
-	return gss_display_status(minor, status, status_type, poid, msgCtx, status_string);
-}
 */
 import "C"
 
@@ -138,13 +129,15 @@ func gssMinorErrors(minor C.OM_uint32, mech g.GssMech) []error {
 	if mech != nil {
 		mechOid = mech.Oid()
 	}
+
+	cMechOid := oid2Coid(mechOid)
 	var lMinor, msgCtx C.OM_uint32
 	var statusString C.gss_buffer_desc
 
 	ret := []error{}
 
 	for {
-		major := C.display_status(minor, 2, string(mechOid), &lMinor, &msgCtx, &statusString)
+		major := C.gss_display_status(&lMinor, minor, 2, cMechOid, &msgCtx, &statusString)
 		if major != 0 {
 			// specifically do not call makeStatus here - we might end up in a loop..
 			ret = append(ret, fmt.Errorf("got GSS error %d/%d while finding string for minor code %d", major, lMinor, minor))
