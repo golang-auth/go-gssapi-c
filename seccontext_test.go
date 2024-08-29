@@ -53,6 +53,7 @@ func TestInitSecContext(t *testing.T) {
 	assert := assert.New(t)
 
 	ta := mkTestAssets()
+	defer ta.Free()
 
 	os.Setenv("KRB5_KTNAME", ta.ktfileRack)
 	os.Setenv("KRB5CCNAME", "FILE:"+ta.ccfile)
@@ -90,6 +91,7 @@ func TestAcceptSecContext(t *testing.T) {
 	assert := assert.New(t)
 
 	ta := mkTestAssets()
+	defer ta.Free()
 
 	os.Setenv("KRB5_KTNAME", ta.ktfileRack)
 	os.Setenv("KRB5CCNAME", "FILE:"+ta.ccfile)
@@ -108,7 +110,7 @@ func TestAcceptSecContext(t *testing.T) {
 	// the initiator token should be accepted by AcceptSecContext because we have a keytab
 	// for the service princ.  The output token should be empty because the initiator
 	// didn't request  mutual auth
-	secCtxAcceptor, acceptorTok, err := ta.lib.AcceptSecContext(nil, initiatorTok)
+	secCtxAcceptor, acceptorTok, err := ta.lib.AcceptSecContext(nil, initiatorTok, nil)
 	assert.NoError(err)
 	assert.Empty(acceptorTok)
 	assert.NotNil(secCtxAcceptor)
@@ -122,7 +124,7 @@ func TestAcceptSecContext(t *testing.T) {
 	assert.NotNil(secCtxInitiator)
 	assert.True(secCtxInitiator.ContinueNeeded())
 
-	secCtxAcceptor, acceptorTok, err = ta.lib.AcceptSecContext(nil, initiatorTok)
+	secCtxAcceptor, acceptorTok, err = ta.lib.AcceptSecContext(nil, initiatorTok, nil)
 	assert.NoError(err)
 	assert.NotEmpty(acceptorTok)
 	assert.NotNil(secCtxAcceptor)
@@ -133,6 +135,7 @@ func TestDeleteSecContext(t *testing.T) {
 	assert := assert.New(t)
 
 	ta := mkTestAssets()
+	defer ta.Free()
 
 	os.Setenv("KRB5_KTNAME", ta.ktfileRack)
 	os.Setenv("KRB5CCNAME", "FILE:"+ta.ccfile)
@@ -160,6 +163,7 @@ func TestContextExpiresAt(t *testing.T) {
 	assert := assert.New(t)
 
 	ta := mkTestAssets()
+	defer ta.Free()
 
 	os.Setenv("KRB5_KTNAME", ta.ktfileRack)
 	os.Setenv("KRB5CCNAME", "FILE:"+ta.ccfile)
@@ -174,7 +178,7 @@ func TestContextExpiresAt(t *testing.T) {
 	assert.NotNil(secCtxInitiator)
 	assert.False(secCtxInitiator.ContinueNeeded())
 
-	secCtxAcceptor, acceptorTok, err := ta.lib.AcceptSecContext(nil, initiatorTok)
+	secCtxAcceptor, acceptorTok, err := ta.lib.AcceptSecContext(nil, initiatorTok, nil)
 	assert.NoError(err)
 	assert.Empty(acceptorTok)
 	assert.NotNil(secCtxAcceptor)
@@ -194,6 +198,7 @@ func TestContextWrapSizeLimit(t *testing.T) {
 	assert := assert.New(t)
 
 	ta := mkTestAssets()
+	defer ta.Free()
 
 	os.Setenv("KRB5CCNAME", "FILE:"+ta.ccfile)
 
@@ -220,6 +225,8 @@ func TestExportImportSecContext(t *testing.T) {
 	assert := assert.New(t)
 
 	ta := mkTestAssets()
+	defer ta.Free()
+
 	os.Setenv("KRB5CCNAME", "FILE:"+ta.ccfile)
 	// This should work because the cred-cache has a ticket for rack/foo.golang-auth.io@GOLANG-AUTH.IO
 	name, err := ta.lib.ImportName("rack@foo.golang-auth.io", g.GSS_NT_HOSTBASED_SERVICE)
@@ -252,6 +259,7 @@ func TestSecContextEstablishment(t *testing.T) {
 	assert := assert.New(t)
 
 	ta := mkTestAssets()
+	defer ta.Free()
 
 	os.Setenv("KRB5_KTNAME", ta.ktfileRack)
 	os.Setenv("KRB5CCNAME", "FILE:"+ta.ccfile)
@@ -262,7 +270,7 @@ func TestSecContextEstablishment(t *testing.T) {
 	secCtxInitiator, initiatorTok, err := ta.lib.InitSecContext(name, g.WithInitiatorFlags(g.ContextFlagMutual))
 	assert.NoError(err)
 
-	secCtxAcceptor, acceptorTok, err := ta.lib.AcceptSecContext(nil, initiatorTok)
+	secCtxAcceptor, acceptorTok, err := ta.lib.AcceptSecContext(nil, initiatorTok, nil)
 	assert.NoError(err)
 
 	for secCtxInitiator.ContinueNeeded() {
@@ -294,4 +302,78 @@ func TestSecContextEstablishment(t *testing.T) {
 
 	_, err = secCtxAcceptor.VerifyMIC(msg, mic)
 	assert.NoError(err)
+}
+
+func TestChannelBindings(t *testing.T) {
+	assert := assert.New(t)
+
+	ta := mkTestAssets()
+	defer ta.Free()
+
+	hasChBound := hasChannelBound()
+	if !hasChBound {
+		t.Log("The GSSAPI C library does not support GSS_C_CHANNEL_BOUND_FLAG, ignoring related tests")
+	}
+
+	os.Setenv("KRB5_KTNAME", ta.ktfileRack)
+	os.Setenv("KRB5CCNAME", "FILE:"+ta.ccfile)
+
+	cb1 := g.ChannelBinding{Data: []byte("foo")}
+	cb2 := g.ChannelBinding{Data: []byte("bar")}
+	_ = cb2
+
+	tests := []struct {
+		name         string
+		icb          *g.ChannelBinding
+		acb          *g.ChannelBinding
+		expectError  error
+		expectCbFlag bool
+	}{
+		// neither side requests bindings: not an error and don't expect ContextFlagChannelBound return flag to be set
+		{"no-bindings", nil, nil, nil, false},
+		// only initiator requests bindings: not an error and don't expect ContextFlagChannelBound return flag to be set
+		{"init-bindings-only", &cb1, nil, nil, false},
+		// only acceptor requests bindings: not an error and don't expect ContextFlagChannelBound return flag to be set
+		{"accept-bindings", nil, &cb1, nil, false},
+		// both sides set matching bindings: not an error and DO expect ContextFlagChannelBound return flag to be set
+		{"match-bindings", &cb1, &cb1, nil, true},
+		// both sides set non-matching bindings: expect an error and don't expect ContextFlagChannelBound return flag to be set
+		{"mismatch-bindings", &cb1, &cb2, g.ErrBadBindings, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+
+			name, err := ta.lib.ImportName("rack@foo.golang-auth.io", g.GSS_NT_HOSTBASED_SERVICE)
+			assert.NoError(err)
+			defer name.Release()
+
+			var reqFlags g.ContextFlag
+
+			reqOpts := []g.InitSecContextOption{g.WithInitiatorFlags(reqFlags)}
+
+			if tt.icb != nil {
+				reqOpts = append(reqOpts, g.WithChannelBinding(tt.icb))
+			}
+
+			secCtxInitiator, initiatorTok, err := ta.lib.InitSecContext(name, reqOpts...)
+			assert.NoError(err)
+			assert.False(secCtxInitiator.ContinueNeeded())
+
+			secCtxAcceptor, _, err := ta.lib.AcceptSecContext(nil, initiatorTok, tt.acb)
+			if tt.expectError != nil {
+				assert.ErrorIs(err, tt.expectError)
+			} else {
+				assert.NoError(err)
+				assert.False(secCtxAcceptor.ContinueNeeded())
+
+				if hasChBound {
+					info2, err := secCtxAcceptor.Inquire()
+					assert.NoError(err)
+
+					assert.Equal(tt.expectCbFlag, info2.Flags&g.ContextFlagChannelBound > 0)
+				}
+			}
+		})
+	}
 }
