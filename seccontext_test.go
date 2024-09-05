@@ -1,6 +1,7 @@
 package gssapi
 
 import (
+	"errors"
 	"testing"
 
 	g "github.com/golang-auth/go-gssapi/v3"
@@ -21,6 +22,49 @@ func TestSecContextInterface(t *testing.T) {
 	_ = gsc
 }
 
+func initContextOne(provider g.Provider, name g.GssName, opts ...g.InitSecContextOption) (g.SecContext, []byte, error) {
+	secCtx, err := provider.InitSecContext(name, opts...)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if secCtx == nil {
+		return nil, nil, errors.New("nil sec ctx")
+	}
+
+	outTok, err := secCtx.Continue(nil)
+	if err == nil && len(outTok) == 0 {
+		err = errors.New("Empty first token")
+	}
+
+	ctx := secCtx.(*SecContext)
+	if err == nil && ctx.id == nil {
+		return nil, nil, errors.New("unexpected nil context")
+	}
+
+	return secCtx, outTok, err
+}
+
+func acceptContextOne(provider g.Provider, cred g.Credential, inTok []byte, cb *g.ChannelBinding) (g.SecContext, []byte, error) {
+	secCtx, err := provider.AcceptSecContext(cred, cb)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if secCtx == nil {
+		return nil, nil, errors.New("nil sec ctx")
+	}
+
+	outTok, err := secCtx.Continue(inTok)
+
+	ctx := secCtx.(*SecContext)
+	if err == nil && ctx.id == nil {
+		return nil, nil, errors.New("unexpected nil context")
+	}
+
+	return secCtx, outTok, err
+}
+
 func TestInitSecContext(t *testing.T) {
 	assert := NewAssert(t)
 	ta.useAsset(testCredCache)
@@ -31,7 +75,7 @@ func TestInitSecContext(t *testing.T) {
 	assert.NoError(err)
 
 	// no continue should be needed when we don't request mutual auth
-	secCtx, outTok, err := ta.lib.InitSecContext(name)
+	secCtx, outTok, err := initContextOne(ta.lib, name)
 	assert.NoError(err)
 	if err == nil {
 		assert.NotEmpty(outTok)
@@ -40,7 +84,7 @@ func TestInitSecContext(t *testing.T) {
 	}
 
 	// .. but should be needed if we do request mutual auth
-	secCtx, outTok, err = ta.lib.InitSecContext(name, g.WithInitiatorFlags(g.ContextFlagMutual))
+	secCtx, outTok, err = initContextOne(ta.lib, name, g.WithInitiatorFlags(g.ContextFlagMutual))
 	assert.NoError(err)
 	if err == nil {
 		assert.NotEmpty(outTok)
@@ -53,7 +97,7 @@ func TestInitSecContext(t *testing.T) {
 	name, err = ta.lib.ImportName("ruin@bar.golang-auth.io", g.GSS_NT_HOSTBASED_SERVICE)
 	assert.NoErrorFatal(err)
 
-	_, _, err = ta.lib.InitSecContext(name)
+	_, _, err = initContextOne(ta.lib, name)
 	assert.Error(err)
 	if IsHeimdal() {
 		assert.Contains(err.Error(), "unable to reach any KDC")
@@ -85,14 +129,14 @@ func TestAcceptSecContext(t *testing.T) {
 				opts = append(opts, g.WithInitiatorFlags(g.ContextFlagMutual))
 			}
 
-			secCtxInitiator, initiatorTok, err := ta.lib.InitSecContext(name, opts...)
+			secCtxInitiator, initiatorTok, err := initContextOne(ta.lib, name, opts...)
 			assert.NoErrorFatal(err)
 			assert.Equal(secCtxInitiator.ContinueNeeded(), mutual)
 
 			// the initiator token should be accepted by AcceptSecContext because we have a keytab
 			// for the service princ.  The output token should be empty because the initiator
 			// didn't request  mutual auth
-			secCtxAcceptor, acceptorTok, err := ta.lib.AcceptSecContext(nil, initiatorTok, nil)
+			secCtxAcceptor, acceptorTok, err := acceptContextOne(ta.lib, nil, initiatorTok, nil)
 			assert.NoErrorFatal(err)
 			assert.NotNil(secCtxAcceptor)
 			assert.False(secCtxAcceptor.ContinueNeeded())
@@ -115,7 +159,7 @@ func TestDeleteSecContext(t *testing.T) {
 	name, err := ta.lib.ImportName("rack@foo.golang-auth.io", g.GSS_NT_HOSTBASED_SERVICE)
 	assert.NoErrorFatal(err)
 
-	secCtx, _, err := ta.lib.InitSecContext(name)
+	secCtx, _, err := initContextOne(ta.lib, name)
 	assert.NoErrorFatal(err)
 
 	// deleting a live or a deleted context should not return errors
@@ -136,13 +180,13 @@ func TestContextExpiresAt(t *testing.T) {
 	name, err := ta.lib.ImportName("rack@foo.golang-auth.io", g.GSS_NT_HOSTBASED_SERVICE)
 	assert.NoErrorFatal(err)
 
-	secCtxInitiator, initiatorTok, err := ta.lib.InitSecContext(name)
-	assert.NoErrorFatal(err)
+	secCtxInitiator, initiatorTok, err := initContextOne(ta.lib, name)
+	assert.NoError(err)
 
-	secCtxAcceptor, _, err := ta.lib.AcceptSecContext(nil, initiatorTok, nil)
-	assert.NoErrorFatal(err)
+	secCtxAcceptor, _, err := acceptContextOne(ta.lib, nil, initiatorTok, nil)
+	assert.NoError(err)
 
-	// both the initiator and the acceptor should know about the expiry time
+	// both the initiator and the acceptor should know about the expiry time of the kerberos creds
 	tm, err := secCtxInitiator.ExpiresAt()
 	assert.NoError(err)
 	if err == nil {
@@ -166,8 +210,8 @@ func TestContextWrapSizeLimit(t *testing.T) {
 
 	o := g.WithInitiatorFlags(g.ContextFlagInteg | g.ContextFlagConf)
 
-	secCtxInitiator, _, err := ta.lib.InitSecContext(name, o)
-	assert.NoErrorFatal(err)
+	secCtxInitiator, _, err := initContextOne(ta.lib, name, o)
+	assert.NoError(err)
 
 	// the max unwrapped token size would always be less that the max
 	// wrapped token size
@@ -184,7 +228,7 @@ func TestExportImportSecContext(t *testing.T) {
 	name, err := ta.lib.ImportName("rack@foo.golang-auth.io", g.GSS_NT_HOSTBASED_SERVICE)
 	assert.NoErrorFatal(err)
 
-	secCtx, _, err := ta.lib.InitSecContext(name)
+	secCtx, _, err := initContextOne(ta.lib, name)
 	assert.NoErrorFatal(err)
 
 	_, err = secCtx.Inquire() // should work the first time
@@ -217,20 +261,30 @@ func TestSecContextEstablishment(t *testing.T) {
 	name, err := ta.lib.ImportName("rack@foo.golang-auth.io", g.GSS_NT_HOSTBASED_SERVICE)
 	assert.NoErrorFatal(err)
 
-	secCtxInitiator, initiatorTok, err := ta.lib.InitSecContext(name, g.WithInitiatorFlags(g.ContextFlagMutual))
+	secCtxInitiator, err := ta.lib.InitSecContext(name, g.WithInitiatorFlags(g.ContextFlagMutual))
 	assert.NoErrorFatal(err)
 
-	secCtxAcceptor, acceptorTok, err := ta.lib.AcceptSecContext(nil, initiatorTok, nil)
+	secCtxAcceptor, err := ta.lib.AcceptSecContext(nil, nil)
 	assert.NoErrorFatal(err)
 
+	var initiatorTok, acceptorTok []byte
 	for secCtxInitiator.ContinueNeeded() {
-		initiatorTok, err = secCtxInitiator.Continue(acceptorTok)
-		assert.NoErrorFatal(err)
-
-		if len(initiatorTok) > 0 {
-			acceptorTok, err = secCtxAcceptor.Continue(initiatorTok)
-			assert.NoErrorFatal(err)
+		acceptorTok, err = secCtxInitiator.Continue(initiatorTok)
+		if err != nil {
+			break
 		}
+
+		if len(acceptorTok) > 0 {
+			initiatorTok, err = secCtxAcceptor.Continue(acceptorTok)
+			if err != nil {
+				break
+			}
+		}
+	}
+
+	assert.NoErrorFatal(err)
+	if err != nil {
+		return
 	}
 
 	assert.False(secCtxAcceptor.ContinueNeeded())
@@ -306,10 +360,10 @@ func TestChannelBindings(t *testing.T) {
 				reqOpts = append(reqOpts, g.WithChannelBinding(tt.icb))
 			}
 
-			_, initiatorTok, err := ta.lib.InitSecContext(name, reqOpts...)
+			_, initiatorTok, err := initContextOne(ta.lib, name, reqOpts...)
 			assert.NoErrorFatal(err)
 
-			secCtxAcceptor, _, err := ta.lib.AcceptSecContext(nil, initiatorTok, tt.acb)
+			secCtxAcceptor, _, err := acceptContextOne(ta.lib, nil, initiatorTok, tt.acb)
 			if tt.expectError != nil {
 				assert.ErrorIs(err, tt.expectError)
 			} else {
