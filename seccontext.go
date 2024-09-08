@@ -1,14 +1,39 @@
 package gssapi
 
 /*
-#include <gssapi.h>
+#include <gssapi/gssapi.h>
+
+#if defined(HEIMDAL_DEPRECATED)
+    #define IS_HEIMDAL 1
+#else
+    #define IS_HEIMDAL 0
+#endif
+
+#if IS_HEIMDAL == 0
+// load MIT extensions
+#include <gssapi/gssapi_ext.h>
+#endif
+
+typedef struct gss_channel_bindings_struct gss_channel_bindings;
+
+int has_channel_bound() {
+#if defined(GSS_C_CHANNEL_BOUND_FLAG)
+	return 1;
+#else
+	return 0;
+#endif
+}
+
 */
 import "C"
 
 import (
 	"fmt"
 	"math"
+	"net"
+	"runtime"
 	"time"
+	"unsafe"
 
 	g "github.com/golang-auth/go-gssapi/v3"
 )
@@ -19,6 +44,12 @@ type SecContext struct {
 	isInitiator    bool
 	targetName     *GssName
 	mech           g.GssMech
+}
+
+func hasChannelBound() bool {
+	x := C.has_channel_bound()
+	_ = x
+	return C.has_channel_bound() == 1
 }
 
 func (provider) InitSecContext(name g.GssName, opts ...g.InitSecContextOption) (g.SecContext, []byte, error) {
@@ -56,10 +87,18 @@ func (provider) InitSecContext(name g.GssName, opts ...g.InitSecContextOption) (
 		cGssName = lName.name
 	}
 
+	var cChBindings C.gss_channel_bindings_t
+	pinner := runtime.Pinner{}
+	if o.ChannelBinding != nil {
+		cChBindings, pinner = mkChannelBindings(o.ChannelBinding)
+	}
+	defer pinner.Unpin()
+
 	var minor C.OM_uint32
 	var cGssCtxId C.gss_ctx_id_t
 	var cOutToken C.gss_buffer_desc // cOutToken.value allocated by GSSAPI; released by *1
-	major := C.gss_init_sec_context(&minor, cGssCred, &cGssCtxId, cGssName, cMechOid, C.OM_uint32(o.Flags), C.OM_uint32(o.Lifetime.Seconds()), nil, nil, nil, &cOutToken, nil, nil)
+
+	major := C.gss_init_sec_context(&minor, cGssCred, &cGssCtxId, cGssName, cMechOid, C.OM_uint32(o.Flags), C.OM_uint32(o.Lifetime.Seconds()), cChBindings, nil, nil, &cOutToken, nil, nil)
 
 	if major != 0 && major != C.GSS_S_CONTINUE_NEEDED {
 		return nil, nil, makeMechStatus(major, minor, o.Mech)
@@ -84,7 +123,7 @@ func (provider) InitSecContext(name g.GssName, opts ...g.InitSecContextOption) (
 	}, outToken, nil
 }
 
-func (provider) AcceptSecContext(cred g.Credential, inputToken []byte) (g.SecContext, []byte, error) {
+func (provider) AcceptSecContext(cred g.Credential, inputToken []byte, cb *g.ChannelBinding) (g.SecContext, []byte, error) {
 	// get the C cred ID and name
 	var cGssCred C.gss_cred_id_t = C.GSS_C_NO_CREDENTIAL
 	if cred != nil {
@@ -96,13 +135,20 @@ func (provider) AcceptSecContext(cred g.Credential, inputToken []byte) (g.SecCon
 		cGssCred = lCred.id
 	}
 
+	var cChBindings C.gss_channel_bindings_t
+	pinner := runtime.Pinner{}
+	if cb != nil {
+		cChBindings, pinner = mkChannelBindings(cb)
+	}
+	defer pinner.Unpin()
+
 	var minor C.OM_uint32
 	var cGssCtxId C.gss_ctx_id_t
 	var cOutToken C.gss_buffer_desc // cOutToken.value allocated by GSSAPI; released by *1
 	cInputToken, pinner := bytesToCBuffer(inputToken)
 	defer pinner.Unpin()
 
-	major := C.gss_accept_sec_context(&minor, &cGssCtxId, cGssCred, &cInputToken, nil, nil, nil, &cOutToken, nil, nil, nil)
+	major := C.gss_accept_sec_context(&minor, &cGssCtxId, cGssCred, &cInputToken, cChBindings, nil, nil, &cOutToken, nil, nil, nil)
 
 	if major != 0 && major != C.GSS_S_CONTINUE_NEEDED {
 		return nil, nil, makeStatus(major, minor)
@@ -427,4 +473,66 @@ func (c *SecContext) VerifyMIC(msg, token []byte) (g.QoP, error) {
 	var cQoP C.gss_qop_t
 	major := C.gss_verify_mic(&minor, c.id, &cMessage, &cToken, &cQoP)
 	return g.QoP(cQoP), makeStatus(major, minor)
+}
+
+func mkChannelBindings(cb *g.ChannelBinding) (C.gss_channel_bindings_t, runtime.Pinner) {
+	pinner := runtime.Pinner{}
+	cCB := C.gss_channel_bindings{}
+
+	if cb.InitiatorAddr != nil {
+		af, addrBuf := addrToGssBuff(cb.InitiatorAddr)
+		cCB.initiator_addrtype = C.OM_uint32(af)
+		cCB.initiator_address = addrBuf
+		pinner.Pin(addrBuf.value)
+	}
+
+	if cb.AcceptorAddr != nil {
+		af, addrBuf := addrToGssBuff(cb.AcceptorAddr)
+		cCB.acceptor_addrtype = C.OM_uint32(af)
+		cCB.acceptor_address = addrBuf
+		pinner.Pin(addrBuf.value)
+	}
+
+	cCB.application_data.length = C.size_t(len(cb.Data))
+	cCB.application_data.value = unsafe.Pointer(&cb.Data[0])
+	pinner.Pin(&cb.Data[0])
+
+	return &cCB, pinner
+}
+
+func addrToGssBuff(addr net.Addr) (g.GssAddressFamily, C.gss_buffer_desc) {
+	var addrType g.GssAddressFamily
+	addrData := []byte{}
+
+	switch a := addr.(type) {
+	case *net.IPAddr:
+		addrType = g.GssAddrFamilyINET
+		addrData = ipData(a.IP)
+	case *net.TCPAddr:
+		addrType = g.GssAddrFamilyINET
+		addrData = ipData(a.IP)
+	case *net.UDPAddr:
+		addrType = g.GssAddrFamilyINET
+		addrData = ipData(a.IP)
+	case *net.UnixAddr:
+		addrType = g.GssAddrFamilyLOCAL
+		addrData = []byte(a.Name)
+	}
+
+	return addrType, C.gss_buffer_desc{
+		length: C.size_t(len(addrData)),
+		value:  unsafe.Pointer(&addrData[0]),
+	}
+}
+
+func ipData(addr net.IP) (ret net.IP) {
+	if ret = addr.To4(); ret != nil {
+		return ret
+	}
+
+	if ret = addr.To16(); ret != nil {
+		return ret
+	}
+
+	return nil
 }
