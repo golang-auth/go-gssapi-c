@@ -1,29 +1,9 @@
 package gssapi
 
 /*
-#include <gssapi/gssapi.h>
-
-#if defined(HEIMDAL_DEPRECATED)
-    #define IS_HEIMDAL 1
-#else
-    #define IS_HEIMDAL 0
-#endif
-
-#if IS_HEIMDAL == 0
-// load MIT extensions
-#include <gssapi/gssapi_ext.h>
-#endif
+#include "gss.h"
 
 typedef struct gss_channel_bindings_struct gss_channel_bindings;
-
-int has_channel_bound() {
-#if defined(GSS_C_CHANNEL_BOUND_FLAG)
-	return 1;
-#else
-	return 0;
-#endif
-}
-
 */
 import "C"
 
@@ -47,8 +27,6 @@ type SecContext struct {
 }
 
 func hasChannelBound() bool {
-	x := C.has_channel_bound()
-	_ = x
 	return C.has_channel_bound() == 1
 }
 
@@ -272,6 +250,10 @@ func (c *SecContext) ExpiresAt() (*time.Time, error) {
 }
 
 func (c *SecContext) Inquire() (*g.SecContextInfo, error) {
+	if c.id == nil {
+		return nil, g.ErrNoContext
+	}
+
 	var minor C.OM_uint32
 	var cSrcName, cTargName C.gss_name_t // allocated by GSSAPI;  released by *1
 	var cLifetime, cFlags C.OM_uint32

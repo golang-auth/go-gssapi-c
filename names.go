@@ -1,7 +1,7 @@
 package gssapi
 
 /*
-#include <gssapi.h>
+#include "gss.h"
 */
 import "C"
 

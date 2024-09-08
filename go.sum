@@ -2,6 +2,8 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/golang-auth/go-gssapi/v3 v3.0.0-alpha h1:vzRDfKlo9OFYaxUOYSrdZ1JiC0TSTWbLtO1y2mNq7Vg=
 github.com/golang-auth/go-gssapi/v3 v3.0.0-alpha/go.mod h1:xNotWZQDADAqcBR4A7AKn+p4tSxQE4m6KA06J41U0cY=
+github.com/golang-auth/go-gssapi/v3 v3.0.0-alpha.1 h1:WWysYm2ch4G8Sfk/pvN2nf/CcBJ/kVJwklylLYCA8W4=
+github.com/golang-auth/go-gssapi/v3 v3.0.0-alpha.1/go.mod h1:xNotWZQDADAqcBR4A7AKn+p4tSxQE4m6KA06J41U0cY=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/stretchr/testify v1.9.0 h1:HtqpIVDClZ4nwg75+f6Lvsy/wHu+3BoSGCbBAcpTsTg=
