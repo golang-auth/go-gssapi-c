@@ -4,7 +4,7 @@
 // of this to detect whether Heimdal is in use.  Note this could break in
 // the future if the developers change the visibility of this define.
 //
-#if defined(HEIMDAL_DEPRECATED)
+#if defined(HEIMDAL_DEPRECATED) ||  defined(GSSKRB_APPLE_DEPRECATED)
     #define IS_HEIMDAL 1
 #else
     #define IS_HEIMDAL 0

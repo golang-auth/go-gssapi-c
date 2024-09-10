@@ -1,4 +1,4 @@
-//go:build !heimdal
+//go:build !heimdal && !darwin
 
 package gssapi
 

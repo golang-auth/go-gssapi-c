@@ -18,14 +18,10 @@ func oidsFromGssOidSet(oidSet C.gss_OID_set) []g.Oid {
 	var oidArray *C.gss_OID_desc = oidSet.elements
 	oidSlice := unsafe.Slice(oidArray, oidSet.count)
 	for i, cOid := range oidSlice {
-		ret[i] = C.GoBytes(cOid.elements, C.int(cOid.length))
+		ret[i] = oidFromGssOid(&cOid)
 	}
 
 	return ret
-}
-
-func oidFromGssOid(cOid C.gss_OID) g.Oid {
-	return C.GoBytes(cOid.elements, C.int(cOid.length))
 }
 
 func gssOidSetFromOids(oids []g.Oid) gssOidSet {
@@ -35,8 +31,7 @@ func gssOidSetFromOids(oids []g.Oid) gssOidSet {
 		ret.oidPtrs = make([]C.gss_OID, len(oids))
 
 		for i, oid := range oids {
-			cOid := C.gss_OID_desc{C.uint(len(oid)), unsafe.Pointer(&oid[0])}
-			ret.oidPtrs[i] = &cOid
+			ret.oidPtrs[i] = oid2Coid(oid)
 		}
 
 		ret.oidSet = &C.gss_OID_set_desc{C.size_t(len(oids)), ret.oidPtrs[0]}
@@ -84,15 +79,4 @@ func bytesToCBuffer(b []byte) (C.gss_buffer_desc, runtime.Pinner) {
 	}
 
 	return ret, pinner
-}
-
-func oid2Coid(oid g.Oid) C.gss_OID {
-	if len(oid) > 0 {
-		return &C.gss_OID_desc{
-			length:   C.OM_uint32(len(oid)),
-			elements: unsafe.Pointer(&oid[0]),
-		}
-	} else {
-		return C.GSS_C_NO_OID
-	}
 }

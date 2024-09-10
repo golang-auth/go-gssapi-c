@@ -113,7 +113,7 @@ func (n *GssName) Display() (string, g.GssNameType, error) {
 
 	name := C.GoBytes(cOutputBuf.value, C.int(cOutputBuf.length))
 
-	oid := C.GoBytes(cOutType.elements, C.int(cOutType.length))
+	oid := oidFromGssOid(cOutType)
 	nameType, err := g.NameFromOid(oid)
 	if err != nil {
 		return "", g.GSS_NO_OID, makeStatus(major, minor)

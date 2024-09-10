@@ -1,3 +1,5 @@
+//go:build !noextensions
+
 package gssapi
 
 import (
