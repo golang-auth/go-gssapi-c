@@ -1,0 +1,76 @@
+name: Checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+    
+jobs:
+
+  consistency-checks:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+  
+    - name: Set up Go 1.22
+      uses: actions/setup-go@v5
+      with:
+          go-version: 1.22.x
+
+    - name: OS details
+      run: |
+          uname -a
+          if [ -e /etc/os-release ]; then cat /etc/os-release; fi
+
+    - name: Install packages
+      if: ${{ runner.os == 'Linux' }}
+      run: |
+          sudo apt-get -y install krb5-user libkrb5-dev
+
+    - name: Code format check
+      run: ./.github/scripts/gofmt
+
+    - uses: dominikh/staticcheck-action@v1.3.1
+
+  basic-tests:
+    name: Basic tests
+    strategy:
+      matrix:
+#        os: ['windows-latest', 'ubuntu-latest']
+        os: ['ubuntu-latest', 'macos-latest']
+        go-version: ['1.21.x', '1.22.x' ]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go ${{ matrix.go-version }}
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    - name: OS details
+      run: |
+          uname -a
+          if [ -e /etc/os-release ]; then cat /etc/os-release; fi
+
+    - name: Install packages
+      if: ${{ runner.os == 'Linux' }}
+      run: |
+          sudo apt-get -y install krb5-user libkrb5-dev
+
+
+    - name: Generate test includes
+      run: |
+        echo pkgs=$(go list ./... | grep -v /examples/) >> "$GITHUB_ENV"
+
+    - name: Run tests
+      run: go test -v $pkgs -count 100 -coverprofile=../cover.out -covermode=atomic
+
+    - name: Check test coverage
+      uses: jake-scott/go-test-coverage@v1.0.0
+      with:
+        config: ./.testcoverage.yml
