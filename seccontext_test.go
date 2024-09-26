@@ -350,7 +350,7 @@ func TestChannelBindings(t *testing.T) {
 
 			name, err := ta.lib.ImportName("rack@foo.golang-auth.io", g.GSS_NT_HOSTBASED_SERVICE)
 			assert.NoErrorFatal(err)
-			defer name.Release()
+			defer name.Release() //nolint:errcheck,
 
 			var reqFlags g.ContextFlag
 

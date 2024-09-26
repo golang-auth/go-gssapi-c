@@ -221,7 +221,9 @@ func (c *SecContext) ContinueNeeded() bool {
 
 func (c *SecContext) Delete() ([]byte, error) {
 	if c.targetName != nil {
-		c.targetName.Release()
+		if err := c.targetName.Release(); err != nil {
+			return nil, err
+		}
 		c.targetName = nil
 	}
 
@@ -296,7 +298,7 @@ func (c *SecContext) Inquire() (*g.SecContextInfo, error) {
 
 	if cSrcName != nil {
 		srcName := nameFromGssInternal(cSrcName)
-		defer srcName.Release() // *1 release GSSAPI allocated name
+		defer srcName.Release() //nolint:errcheck // *1 release GSSAPI allocated name
 		srcNameStr, srcNameType, err = srcName.Display()
 		if err != nil {
 			return nil, err
@@ -305,7 +307,7 @@ func (c *SecContext) Inquire() (*g.SecContextInfo, error) {
 
 	if cTargName != nil {
 		targName := nameFromGssInternal(cTargName)
-		defer targName.Release() // *1 release GSSAPI allocated name
+		defer targName.Release() //nolint:errcheck // *1 release GSSAPI allocated name
 		targNameStr, targNameType, err = targName.Display()
 		if err != nil {
 			return nil, err

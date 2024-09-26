@@ -77,7 +77,7 @@ func (c *Credential) Inquire() (*g.CredInfo, error) {
 	gssName := nameFromGssInternal(cGssName)
 
 	// *1  release GSSAPI name
-	defer gssName.Release()
+	defer gssName.Release() //nolint:all
 
 	name, nameType, err := gssName.Display()
 	if err != nil {
@@ -139,7 +139,7 @@ func (c *Credential) InquireByMech(mech g.GssMech) (*g.CredInfo, error) {
 	gssName := nameFromGssInternal(cGssName)
 
 	// *1  release GSSAPI name
-	defer gssName.Release()
+	defer gssName.Release() //nolint:all
 
 	name, nameType, err := gssName.Display()
 	if err != nil {
@@ -199,10 +199,11 @@ func (c *Credential) Add(name g.GssName, mech g.GssMech, usage g.CredUsage, init
 		return makeMechStatus(major, minor, mech)
 	}
 
+	var err error
 	if IsHeimdal() {
-		c.Release()
+		err = c.Release()
 		c.id = *cCredOut
 	}
 
-	return nil
+	return err
 }

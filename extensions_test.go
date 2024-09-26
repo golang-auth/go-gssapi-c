@@ -31,7 +31,7 @@ func TestInquireName(t *testing.T) {
 
 	name1, err := lib.ImportName("fooname", g.GSS_NT_USER_NAME)
 	assert.NoErrorFatal(err)
-	defer name1.Release()
+	defer name1.Release() //nolint:errcheck
 
 	isMN, _, err := name1.(*GssName).Inquire()
 	assert.NoError(err)

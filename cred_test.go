@@ -183,13 +183,13 @@ func TestAcquireCredentialMechResult(t *testing.T) {
 	mechs := []g.GssMech{g.GSS_MECH_KRB5}
 	cred, err := lib.AcquireCredential(nil, mechs, g.CredUsageInitiateOnly, 0)
 	assert.NoError(err)
-	defer cred.Release()
+	defer cred.Release() //nolint:errcheck
 
 	// Kerb and SPNEGO
 	mechs = []g.GssMech{g.GSS_MECH_KRB5, g.GSS_MECH_SPNEGO}
 	cred, err = lib.AcquireCredential(nil, mechs, g.CredUsageInitiateOnly, 0)
 	assert.NoError(err)
-	defer cred.Release()
+	defer cred.Release() //nolint:errcheck
 
 }
 
@@ -210,7 +210,7 @@ func TestInquireCredential(t *testing.T) {
 	// grab the default initiate cred -- which will be the TGT from the sample cred-cache
 	cred, err := lib.AcquireCredential(nil, nil, g.CredUsageInitiateOnly, 0)
 	assert.NoError(err)
-	defer cred.Release()
+	defer cred.Release() //nolint:errcheck
 
 	info, err := cred.Inquire()
 	assert.NoError(err)
@@ -240,7 +240,7 @@ func TestInquireCredentialByMech(t *testing.T) {
 	// grab the default initiate cred -- which will be the TGT from the sample cred-cache
 	cred, err := lib.AcquireCredential(nil, nil, g.CredUsageInitiateOnly, 0)
 	assert.NoError(err)
-	defer cred.Release()
+	defer cred.Release() //nolint:errcheck
 
 	info, err := cred.InquireByMech(g.GSS_MECH_KRB5)
 	assert.NoError(err)
@@ -277,7 +277,7 @@ func TestAddCredential(t *testing.T) {
 	// grab the default initiate cred -- which will be the TGT from the sample cred-cache
 	cred, err := lib.AcquireCredential(nil, mechs, g.CredUsageInitiateOnly, 0)
 	assert.NoError(err)
-	defer cred.Release()
+	defer cred.Release() //nolint:errcheck
 
 	info, err := cred.Inquire()
 	assert.NoError(err)

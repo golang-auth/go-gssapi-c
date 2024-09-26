@@ -7,4 +7,3 @@ package gssapi
 #cgo CPPFLAGS: -I/usr/local/opt/heimdal/include
 */
 import "C"
-
