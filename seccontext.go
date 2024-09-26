@@ -92,11 +92,11 @@ func (c *SecContext) initSecContext() ([]byte, error) {
 	var cGssName C.gss_name_t = c.targetName.name
 
 	var cChBindings C.gss_channel_bindings_t
-	pinner := runtime.Pinner{}
+	pinnerCB := runtime.Pinner{}
 	if c.initOptions.ChannelBinding != nil {
-		cChBindings, pinner = mkChannelBindings(c.initOptions.ChannelBinding)
+		cChBindings, pinnerCB = mkChannelBindings(c.initOptions.ChannelBinding)
 	}
-	defer pinner.Unpin()
+	defer pinnerCB.Unpin()
 
 	var minor C.OM_uint32
 	var cGssCtxId C.gss_ctx_id_t
@@ -109,6 +109,8 @@ func (c *SecContext) initSecContext() ([]byte, error) {
 
 	// *1  release GSSAPI allocated buffer
 	defer C.gss_release_buffer(&minor, &cOutToken)
+
+	pinnerCB.Unpin()
 
 	outToken := C.GoBytes(cOutToken.value, C.int(cOutToken.length))
 	c.continueNeeded = major == C.GSS_S_CONTINUE_NEEDED
@@ -130,11 +132,11 @@ func (c *SecContext) acceptSecContext(inputToken []byte) ([]byte, error) {
 	}
 
 	var cChBindings C.gss_channel_bindings_t
-	pinner := runtime.Pinner{}
+	pinnerCb := runtime.Pinner{}
 	if c.initOptions.ChannelBinding != nil {
-		cChBindings, pinner = mkChannelBindings(c.initOptions.ChannelBinding)
+		cChBindings, pinnerCb = mkChannelBindings(c.initOptions.ChannelBinding)
 	}
-	defer pinner.Unpin()
+	defer pinnerCb.Unpin()
 
 	var minor C.OM_uint32
 	var cGssCtxId C.gss_ctx_id_t
@@ -143,13 +145,14 @@ func (c *SecContext) acceptSecContext(inputToken []byte) ([]byte, error) {
 	defer pinner.Unpin()
 
 	major := C.gss_accept_sec_context(&minor, &cGssCtxId, cGssCred, &cInputToken, cChBindings, nil, nil, &cOutToken, nil, nil, nil)
-
 	if major != 0 && major != C.GSS_S_CONTINUE_NEEDED {
 		return nil, makeStatus(major, minor)
 	}
 
 	// *1  release GSSAPI allocated buffer
 	defer C.gss_release_buffer(&minor, &cOutToken)
+
+	pinnerCb.Unpin()
 
 	outToken := C.GoBytes(cOutToken.value, C.int(cOutToken.length))
 	c.id = cGssCtxId

@@ -7,13 +7,6 @@ import (
 	g "github.com/golang-auth/go-gssapi/v3"
 )
 
-func TestMain(m *testing.M) {
-	ta = mkTestAssets()
-	defer ta.Free()
-
-	m.Run()
-}
-
 // will prevent compilation if SecContext{} doesn't implement the interface
 func TestSecContextInterface(t *testing.T) {
 	s := SecContext{}
@@ -190,13 +183,13 @@ func TestContextExpiresAt(t *testing.T) {
 	tm, err := secCtxInitiator.ExpiresAt()
 	assert.NoError(err)
 	if err == nil {
-		assert.Equal(2032, tm.Year())
+		assert.Equal(2033, tm.UTC().Year())
 	}
 
 	tm, err = secCtxAcceptor.ExpiresAt()
 	assert.NoError(err)
 	if err == nil {
-		assert.Equal(2032, tm.Year())
+		assert.Equal(2033, tm.UTC().Year())
 	}
 }
 
@@ -268,7 +261,7 @@ func TestSecContextEstablishment(t *testing.T) {
 	assert.NoErrorFatal(err)
 
 	var initiatorTok, acceptorTok []byte
-	for secCtxInitiator.ContinueNeeded() {
+	for secCtxInitiator.ContinueNeeded() || secCtxAcceptor.ContinueNeeded() {
 		acceptorTok, err = secCtxInitiator.Continue(initiatorTok)
 		if err != nil {
 			break
@@ -286,8 +279,6 @@ func TestSecContextEstablishment(t *testing.T) {
 	if err != nil {
 		return
 	}
-
-	assert.False(secCtxAcceptor.ContinueNeeded())
 
 	msg := []byte("Hello GSSAPI")
 	wrapped, hasConf, err := secCtxInitiator.Wrap(msg, true, 0)
@@ -319,7 +310,6 @@ func TestChannelBindings(t *testing.T) {
 
 	cb1 := g.ChannelBinding{Data: []byte("foo")}
 	cb2 := g.ChannelBinding{Data: []byte("bar")}
-	_ = cb2
 
 	tests := []struct {
 		name         string

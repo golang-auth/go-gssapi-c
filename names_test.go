@@ -2,77 +2,69 @@ package gssapi
 
 import (
 	"fmt"
-	"io"
-	"os"
 	"testing"
 
 	g "github.com/golang-auth/go-gssapi/v3"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestImportName(t *testing.T) {
 	assert := NewAssert(t)
 
-	lib := New()
-
-	name, err := lib.ImportName("fooname", g.GSS_NT_USER_NAME)
+	// two good names..
+	name, err := ta.lib.ImportName("fooname", g.GSS_NT_USER_NAME)
 	assert.NoError(err)
 	defer releaseName(name)
 
-	name, err = lib.ImportName("fooname", g.GSS_NT_HOSTBASED_SERVICE)
+	name, err = ta.lib.ImportName("fooname", g.GSS_NT_HOSTBASED_SERVICE)
 	assert.NoError(err)
 	defer releaseName(name)
 
 	// and a "bad" name
-	_, err = lib.ImportName("", g.GSS_NT_USER_NAME)
+	_, err = ta.lib.ImportName("", g.GSS_NT_USER_NAME)
 	assert.ErrorIs(err, g.ErrBadName)
 }
 
 func TestCompareName(t *testing.T) {
-	assert := assert.New(t)
+	assert := NewAssert(t)
 
-	lib := New()
+	var tests = []struct {
+		testName  string
+		princName string
+		nameType  g.GssNameType
+		isEqual   bool
+	}{
+		{"same name", "fooname", g.GSS_NT_USER_NAME, true},
+		{"different name", "barname", g.GSS_NT_USER_NAME, false},
+		{"different type", "fooname", g.GSS_NT_HOSTBASED_SERVICE, false},
+	}
 
-	name1, err := lib.ImportName("fooname", g.GSS_NT_USER_NAME)
-	assert.NoError(err)
+	name1, err := ta.lib.ImportName("fooname", g.GSS_NT_USER_NAME)
+	assert.NoErrorFatal(err)
 	defer releaseName(name1)
 
-	name2, err := lib.ImportName("fooname", g.GSS_NT_USER_NAME)
-	assert.NoError(err)
-	defer releaseName(name2)
+	for _, tt := range tests {
+		t.Run(tt.testName, func(t *testing.T) {
+			assert := NewAssert(t)
+			thisName, err := ta.lib.ImportName(tt.princName, tt.nameType)
+			assert.NoErrorFatal(err)
 
-	name3, err := lib.ImportName("barname", g.GSS_NT_USER_NAME)
-	assert.NoError(err)
-	defer releaseName(name3)
+			equal, err := name1.Compare(thisName)
+			assert.NoError(err)
 
-	name4, err := lib.ImportName("fooname", g.GSS_NT_HOSTBASED_SERVICE)
-	assert.NoError(err)
-	defer releaseName(name4)
-
-	equal, err := name1.Compare(name1)
-	assert.NoError(err)
-	assert.True(equal)
-
-	equal, err = name1.Compare(name2)
-	assert.NoError(err)
-	assert.True(equal)
-
-	equal, err = name1.Compare(name3)
-	assert.NoError(err)
-	assert.False(equal)
-
-	equal, err = name1.Compare(name4)
-	assert.NoError(err)
-	assert.False(equal)
+			if tt.isEqual {
+				assert.True(equal)
+			} else {
+				assert.False(equal)
+			}
+		})
+	}
 
 }
 
 func TestDisplayName(t *testing.T) {
 	assert := NewAssert(t)
 
-	lib := New()
-
-	name1, err := lib.ImportName("fooname", g.GSS_NT_USER_NAME)
+	name1, err := ta.lib.ImportName("fooname", g.GSS_NT_USER_NAME)
 	assert.NoErrorFatal(err)
 	defer releaseName(name1)
 
@@ -84,6 +76,8 @@ func TestDisplayName(t *testing.T) {
 	// The value passed to gss_display_name will be null..
 	name2 := GssName{}
 	_, _, err = name2.Display()
+
+	// Heimdal doesn't return the Calling Errors defined in RFC 2744 § 3.9.1
 	if !IsHeimdal() {
 		assert.ErrorIs(err, ErrInaccessibleRead)
 	}
@@ -91,7 +85,6 @@ func TestDisplayName(t *testing.T) {
 }
 
 func TestInquireMechsForName(t *testing.T) {
-	lib := New()
 
 	type testInfo struct {
 		name            string
@@ -101,6 +94,8 @@ func TestInquireMechsForName(t *testing.T) {
 	}
 
 	var tests []testInfo
+
+	// Heimdal doesn't support anonymous or enterprise names
 	if IsHeimdal() {
 		tests = []testInfo{
 			{"foo", g.GSS_NT_HOSTBASED_SERVICE, false, 2},
@@ -119,7 +114,7 @@ func TestInquireMechsForName(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			assert := NewAssert(t)
 
-			gssName, err := lib.ImportName(tt.name, tt.nameType)
+			gssName, err := ta.lib.ImportName(tt.name, tt.nameType)
 			assert.NoErrorFatal(err)
 			defer releaseName(gssName)
 
@@ -133,74 +128,24 @@ func TestInquireMechsForName(t *testing.T) {
 
 }
 
-// default realm defined
-var krb5Conf1 = `
-[libdefaults]
-
-dns_lookup_realm = false
-default_realm = FOO.COM
-`
-
-// missing default realm
-var krb5Conf2 = `
-[libdefaults]
-
-dns_lookup_realm = false
-`
-
-func writeKrb5Confs() (f1, f2 string, err error) {
-	fh, err := os.CreateTemp("", "test")
-	if err != nil {
-		return
-	}
-
-	f1 = fh.Name()
-	if _, err = io.WriteString(fh, krb5Conf1); err != nil {
-		return
-	}
-	fh.Close()
-
-	fh, err = os.CreateTemp("", "test")
-	if err != nil {
-		return
-	}
-
-	f2 = fh.Name()
-	if _, err = io.WriteString(fh, krb5Conf2); err != nil {
-		return
-	}
-	fh.Close()
-
-	return
-}
-
 func TestCanonicalizeName(t *testing.T) {
 	assert := NewAssert(t)
 
-	vars := newSaveVars("KRB5_CONFIG")
-	defer vars.Restore()
-
-	lib := New()
-
-	f1, f2, err := writeKrb5Confs()
-	assert.NoErrorFatal(err)
-	defer os.Remove(f1)
-	defer os.Remove(f2)
-
-	name1, err := lib.ImportName("foo", g.GSS_NT_USER_NAME)
+	name1, err := ta.lib.ImportName("foo", g.GSS_NT_USER_NAME)
 	assert.NoErrorFatal(err)
 	defer releaseName(name1)
 
 	// test with a config that allows the Kerberos to find the realm
-	os.Setenv("KRB5_CONFIG", f1)
+	ta.useAsset(testCfg1)
 	cName1, err := name1.Canonicalize(g.GSS_MECH_KRB5)
 	assert.NoError(err)
 	defer releaseName(cName1)
 
 	// test with a config that has no default realm, so this should fail to canonicalize
-	// on MIT (but NOT on Heimdal which uses krb5_get_host_realm(local hostname))
+	// on MIT (but NOT on Heimdal which uses krb5_get_host_realm(local hostname) to find
+	// a default realm)
 	if !IsHeimdal() {
-		os.Setenv("KRB5_CONFIG", f2)
+		ta.useAsset(testCfg2)
 		_, err := name1.Canonicalize(g.GSS_MECH_KRB5)
 
 		assert.Error(err)
@@ -213,18 +158,9 @@ func TestCanonicalizeName(t *testing.T) {
 func TestExportName(t *testing.T) {
 	assert := NewAssert(t)
 
-	vars := newSaveVars("KRB5_CONFIG")
-	defer vars.Restore()
+	ta.useAsset(testCfg1)
 
-	lib := New()
-
-	f1, f2, err := writeKrb5Confs()
-	assert.NoError(err)
-	defer os.Remove(f1)
-	defer os.Remove(f2)
-	os.Setenv("KRB5_CONFIG", f1)
-
-	name1, err := lib.ImportName("fooname", g.GSS_NT_USER_NAME)
+	name1, err := ta.lib.ImportName("fooname", g.GSS_NT_USER_NAME)
 	assert.NoErrorFatal(err)
 	defer name1.Release() //nolint:errcheck
 
@@ -247,9 +183,8 @@ func TestExportName(t *testing.T) {
 
 func TestDuplicateName(t *testing.T) {
 	assert := NewAssert(t)
-	lib := New()
 
-	name1, err := lib.ImportName("fooname", g.GSS_NT_USER_NAME)
+	name1, err := ta.lib.ImportName("fooname", g.GSS_NT_USER_NAME)
 	assert.NoErrorFatal(err)
 	defer name1.Release() //nolint:errcheck
 

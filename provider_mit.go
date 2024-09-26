@@ -2,5 +2,5 @@
 
 package gssapi
 
-// #cgo LDFLAGS: -lgssapi_krb5
+//#cgo pkg-config:mit-krb5-gssapi
 import "C"

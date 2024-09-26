@@ -27,7 +27,7 @@ func New() g.Provider {
 	}
 }
 
-var ErrTooLarge = errors.New("The GSSAPI-C bindings only support up to 32 bit messages")
+var ErrTooLarge = errors.New("the GSSAPI-C bindings only support up to 32 bit messages")
 
 func IsHeimdal() bool {
 	return C.IS_HEIMDAL == 1

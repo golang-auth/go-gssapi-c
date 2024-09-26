@@ -12,6 +12,7 @@ import (
 	g "github.com/golang-auth/go-gssapi/v3"
 )
 
+// Convert from a C OID set to slice of OID objects
 func oidsFromGssOidSet(oidSet C.gss_OID_set) []g.Oid {
 	ret := make([]g.Oid, oidSet.count)
 
@@ -24,6 +25,7 @@ func oidsFromGssOidSet(oidSet C.gss_OID_set) []g.Oid {
 	return ret
 }
 
+// Convert from a slice of OID object to a set of C OIDS (see below)
 func gssOidSetFromOids(oids []g.Oid) gssOidSet {
 	ret := gssOidSet{}
 
@@ -40,22 +42,28 @@ func gssOidSetFromOids(oids []g.Oid) gssOidSet {
 	return ret
 }
 
+// Wrap a C GSS OID set such that we can pin and then unpin the underlying pointers
+// so that the garbage collector doesn't touch them while they are being used
+// by the C layer.
 type gssOidSet struct {
 	pinner  runtime.Pinner
 	oidSet  C.gss_OID_set
 	oidPtrs []C.gss_OID
 }
 
+// Pin the pointers in the OID set
 func (oidset *gssOidSet) Pin() {
 	for _, p := range oidset.oidPtrs {
 		oidset.pinner.Pin(p)
 	}
 }
 
+// Unpin the pointers
 func (oidset *gssOidSet) Unpin() {
 	oidset.pinner.Unpin()
 }
 
+// Convert Go GSSAPI interface mech names to a set of mech OIDs
 func mechsToOids(mechs []g.GssMech) []g.Oid {
 	ret := make([]g.Oid, len(mechs))
 	for i, mech := range mechs {
@@ -65,6 +73,10 @@ func mechsToOids(mechs []g.GssMech) []g.Oid {
 	return ret
 }
 
+// Create a GSS buffer pointing to Go bytes, and pin the Go bytes
+// so that the garbage collector doesn't touch the memory.  Return the
+// pinner, which should be used to unpin the memory after the C function
+// returns.
 func bytesToCBuffer(b []byte) (C.gss_buffer_desc, runtime.Pinner) {
 	pinner := runtime.Pinner{}
 

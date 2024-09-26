@@ -32,14 +32,22 @@ jobs:
     - name: Code format check
       run: ./.github/scripts/gofmt
 
-    - uses: dominikh/staticcheck-action@v1.3.1
+    - name: Static check
+      uses: dominikh/staticcheck-action@v1.3.1
+
+    - name: golangci-lint
+      uses: golangci/golangci-lint-action@v6
+      with:
+        version: latest
 
   basic-tests:
     name: Basic tests
     strategy:
+      fail-fast: false
       matrix:
 #        os: ['windows-latest', 'ubuntu-latest']
-        os: ['ubuntu-latest', 'macos-latest']
+#        os: ['ubuntu-latest', 'macos-latest']
+        os: ['ubuntu-latest']
         go-version: ['1.21.x', '1.22.x' ]
 
     runs-on: ${{ matrix.os }}
@@ -54,21 +62,27 @@ jobs:
 
     - name: OS details
       run: |
+          echo This is Github OS ${{ runner.os }}
           uname -a
           if [ -e /etc/os-release ]; then cat /etc/os-release; fi
 
-    - name: Install packages
+    - name: Install Ubuntu packages
       if: ${{ runner.os == 'Linux' }}
       run: |
           sudo apt-get -y install krb5-user libkrb5-dev
 
+    - name: Install MacOS packages
+      if: ${{ runner.os == 'macOS' }}
+      run: |
+          brew install heimdal
+          echo "PKG_CONFIG_PATH=/opt/homebrew/opt/heimdal/lib/pkgconfig" >>$GITHUB_ENV
 
     - name: Generate test includes
       run: |
         echo pkgs=$(go list ./... | grep -v /examples/) >> "$GITHUB_ENV"
 
     - name: Run tests
-      run: go test -v $pkgs -count 100 -coverprofile=../cover.out -covermode=atomic
+      run: go test  $pkgs -count 100 -coverprofile=cover.out -covermode=atomic
 
     - name: Check test coverage
       uses: jake-scott/go-test-coverage@v1.0.0

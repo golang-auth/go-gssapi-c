@@ -4,11 +4,10 @@ import (
 	"testing"
 
 	g "github.com/golang-auth/go-gssapi/v3"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestConstValues(t *testing.T) {
-	assert := assert.New(t)
+	assert := NewAssert(t)
 
 	assert.Equal(CallingErrorCode(1), inaccessibleRead)
 	assert.Equal(CallingErrorCode(2), inaccessibleWrite)
@@ -16,7 +15,7 @@ func TestConstValues(t *testing.T) {
 }
 
 func TestCallingUnwrap(t *testing.T) {
-	assert := assert.New(t)
+	assert := NewAssert(t)
 
 	var err error = FatalCallingError{
 		CallingErrorCode: inaccessibleRead,
@@ -38,7 +37,7 @@ func TestCallingUnwrap(t *testing.T) {
 }
 
 func TestCallingError(t *testing.T) {
-	assert := assert.New(t)
+	assert := NewAssert(t)
 
 	var err error = FatalCallingError{
 		CallingErrorCode: inaccessibleRead,
@@ -59,7 +58,7 @@ func TestCallingError(t *testing.T) {
 }
 
 func TestMakeStatus(t *testing.T) {
-	assert := assert.New(t)
+	assert := NewAssert(t)
 
 	err := makeStatus(0x02<<24|0x03<<16|0x01, 123)
 	msg := err.Error()
