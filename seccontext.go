@@ -22,99 +22,117 @@ type SecContext struct {
 	isInitiator    bool
 	targetName     *GssName
 	mech           g.GssMech
+
+	initOptions *g.InitSecContextOptions
 }
 
 func hasChannelBound() bool {
 	return C.has_channel_bound() == 1
 }
 
-func (provider) InitSecContext(name g.GssName, opts ...g.InitSecContextOption) (g.SecContext, []byte, error) {
+// InitSecContext() is just a constructor for the context -- it does not perform any GSSAPI calls
+func (provider) InitSecContext(name g.GssName, opts ...g.InitSecContextOption) (g.SecContext, error) {
 	o := g.InitSecContextOptions{}
 	for _, opt := range opts {
 		opt(&o)
 	}
 
+	var nameImpl *GssName // impl not interface
+	if name != nil {
+		var ok bool
+		nameImpl, ok = name.(*GssName) // name must be *our* impl
+		if !ok {
+			return nil, fmt.Errorf("bad name type %T, %w", name, g.ErrBadName)
+		}
+	}
+
+	savedName, err := nameImpl.Duplicate()
+	if err != nil {
+		return nil, fmt.Errorf("%w duplicating name: %w", g.ErrFailure, err)
+	}
+
+	return &SecContext{
+		isInitiator:    true,
+		continueNeeded: true,
+		targetName:     savedName.(*GssName),
+		mech:           o.Mech,
+		initOptions:    &o,
+	}, nil
+}
+
+func (provider) AcceptSecContext(cred g.Credential, cb *g.ChannelBinding) (g.SecContext, error) {
+	return &SecContext{
+		isInitiator: false,
+		initOptions: &g.InitSecContextOptions{
+			Credential:     cred,
+			ChannelBinding: cb,
+		},
+	}, nil
+}
+
+// initSecContext() performs the GSSAPI context initialization using paramers supplied to InitSecContext()
+func (c *SecContext) initSecContext() ([]byte, error) {
 	mech := g.Oid{}
-	if o.Mech != nil {
-		mech = o.Mech.Oid()
+	if c.initOptions.Mech != nil {
+		mech = c.initOptions.Mech.Oid()
 	}
 	cMechOid := oid2Coid(mech)
 
 	// get the C cred ID and name
 	var cGssCred C.gss_cred_id_t = C.GSS_C_NO_CREDENTIAL
-	if o.Credential != nil {
-		lCred, ok := o.Credential.(*Credential)
+	if c.initOptions.Credential != nil {
+		credImpl, ok := c.initOptions.Credential.(*Credential) // must be *our* impl
 		if !ok {
-			return nil, nil, fmt.Errorf("bad credential type %T, %w", lCred, g.ErrDefectiveCredential)
+			return nil, fmt.Errorf("bad credential type %T, %w", credImpl, g.ErrDefectiveCredential)
 		}
 
-		cGssCred = lCred.id
+		cGssCred = credImpl.id
 	}
 
-	var cGssName C.gss_name_t
-	var lName *GssName
-	if name != nil {
-		var ok bool
-		lName, ok = name.(*GssName)
-		if !ok {
-			return nil, nil, fmt.Errorf("bad name type %T, %w", name, g.ErrBadName)
-		}
-
-		cGssName = lName.name
-	}
+	var cGssName C.gss_name_t = c.targetName.name
 
 	var cChBindings C.gss_channel_bindings_t
 	pinner := runtime.Pinner{}
-	if o.ChannelBinding != nil {
-		cChBindings, pinner = mkChannelBindings(o.ChannelBinding)
+	if c.initOptions.ChannelBinding != nil {
+		cChBindings, pinner = mkChannelBindings(c.initOptions.ChannelBinding)
 	}
 	defer pinner.Unpin()
 
 	var minor C.OM_uint32
 	var cGssCtxId C.gss_ctx_id_t
 	var cOutToken C.gss_buffer_desc // cOutToken.value allocated by GSSAPI; released by *1
-
-	major := C.gss_init_sec_context(&minor, cGssCred, &cGssCtxId, cGssName, cMechOid, C.OM_uint32(o.Flags), C.OM_uint32(o.Lifetime.Seconds()), cChBindings, nil, nil, &cOutToken, nil, nil)
+	major := C.gss_init_sec_context(&minor, cGssCred, &cGssCtxId, cGssName, cMechOid, C.OM_uint32(c.initOptions.Flags), C.OM_uint32(c.initOptions.Lifetime.Seconds()), cChBindings, nil, nil, &cOutToken, nil, nil)
 
 	if major != 0 && major != C.GSS_S_CONTINUE_NEEDED {
-		return nil, nil, makeMechStatus(major, minor, o.Mech)
+		return nil, makeMechStatus(major, minor, c.initOptions.Mech)
 	}
 
 	// *1  release GSSAPI allocated buffer
 	defer C.gss_release_buffer(&minor, &cOutToken)
 
 	outToken := C.GoBytes(cOutToken.value, C.int(cOutToken.length))
+	c.continueNeeded = major == C.GSS_S_CONTINUE_NEEDED
+	c.id = cGssCtxId
 
-	savedName, err := lName.Duplicate()
-	if err != nil {
-		return nil, nil, makeMechStatus(major, minor, o.Mech)
-	}
-
-	return &SecContext{
-		id:             cGssCtxId,
-		continueNeeded: major == C.GSS_S_CONTINUE_NEEDED,
-		isInitiator:    true,
-		targetName:     savedName.(*GssName),
-		mech:           o.Mech,
-	}, outToken, nil
+	return outToken, nil
 }
 
-func (provider) AcceptSecContext(cred g.Credential, inputToken []byte, cb *g.ChannelBinding) (g.SecContext, []byte, error) {
+func (c *SecContext) acceptSecContext(inputToken []byte) ([]byte, error) {
 	// get the C cred ID and name
 	var cGssCred C.gss_cred_id_t = C.GSS_C_NO_CREDENTIAL
-	if cred != nil {
-		lCred, ok := cred.(*Credential)
+	if c.initOptions.Credential != nil {
+		credImpl, ok := c.initOptions.Credential.(*Credential) // must be *our* impl
 		if !ok {
-			return nil, nil, fmt.Errorf("bad credential type %T, %w", lCred, g.ErrDefectiveCredential)
+			return nil, fmt.Errorf("bad credential type %T, %w", credImpl, g.ErrDefectiveCredential)
 		}
 
-		cGssCred = lCred.id
+		cGssCred = credImpl.id
 	}
 
 	var cChBindings C.gss_channel_bindings_t
 	pinner := runtime.Pinner{}
-	if cb != nil {
-		cChBindings, pinner = mkChannelBindings(cb)
+	if c.initOptions.ChannelBinding != nil {
+		cChBindings, pinner = mkChannelBindings(c.initOptions.ChannelBinding)
 	}
 	defer pinner.Unpin()
 
@@ -127,18 +145,15 @@ func (provider) AcceptSecContext(cred g.Credential, inputToken []byte, cb *g.Cha
 	major := C.gss_accept_sec_context(&minor, &cGssCtxId, cGssCred, &cInputToken, cChBindings, nil, nil, &cOutToken, nil, nil, nil)
 
 	if major != 0 && major != C.GSS_S_CONTINUE_NEEDED {
-		return nil, nil, makeStatus(major, minor)
+		return nil, makeStatus(major, minor)
 	}
 
 	// *1  release GSSAPI allocated buffer
 	defer C.gss_release_buffer(&minor, &cOutToken)
 
 	outToken := C.GoBytes(cOutToken.value, C.int(cOutToken.length))
-	return &SecContext{
-		id:             cGssCtxId,
-		continueNeeded: major == C.GSS_S_CONTINUE_NEEDED,
-		isInitiator:    false,
-	}, outToken, nil
+	c.id = cGssCtxId
+	return outToken, nil
 }
 
 func (provider) ImportSecContext(token []byte) (g.SecContext, error) {
@@ -156,9 +171,21 @@ func (provider) ImportSecContext(token []byte) (g.SecContext, error) {
 	return &SecContext{
 		id: cGssCtxId,
 	}, nil
+
 }
 
 func (c *SecContext) Continue(inputToken []byte) ([]byte, error) {
+	// if the context is not yet initialized then do that..
+	if c.id == nil {
+		if c.isInitiator {
+			return c.initSecContext()
+		} else {
+			return c.acceptSecContext(inputToken)
+		}
+	}
+
+	// otherwise continue establishing the context..
+	//
 	var major, minor C.OM_uint32
 	var cOutToken C.gss_buffer_desc // cOutToken.value allocated by GSSAPI; released by *1
 	cInputToken, pinner := bytesToCBuffer(inputToken)
