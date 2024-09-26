@@ -1,29 +1,7 @@
 package gssapi
 
 /*
-#include <gssapi/gssapi.h>
-
-#if defined(HEIMDAL_DEPRECATED)
-    #define IS_HEIMDAL 1
-#else
-    #define IS_HEIMDAL 0
-#endif
-
-#if IS_HEIMDAL == 0
-// load MIT extensions
-#include <gssapi/gssapi_ext.h>
-#endif
-
-typedef struct gss_channel_bindings_struct gss_channel_bindings;
-
-int has_channel_bound() {
-#if defined(GSS_C_CHANNEL_BOUND_FLAG)
-	return 1;
-#else
-	return 0;
-#endif
-}
-
+#include "gss.h"
 */
 import "C"
 
@@ -47,8 +25,6 @@ type SecContext struct {
 }
 
 func hasChannelBound() bool {
-	x := C.has_channel_bound()
-	_ = x
 	return C.has_channel_bound() == 1
 }
 
@@ -272,6 +248,10 @@ func (c *SecContext) ExpiresAt() (*time.Time, error) {
 }
 
 func (c *SecContext) Inquire() (*g.SecContextInfo, error) {
+	if c.id == nil {
+		return nil, g.ErrNoContext
+	}
+
 	var minor C.OM_uint32
 	var cSrcName, cTargName C.gss_name_t // allocated by GSSAPI;  released by *1
 	var cLifetime, cFlags C.OM_uint32
@@ -473,31 +453,6 @@ func (c *SecContext) VerifyMIC(msg, token []byte) (g.QoP, error) {
 	var cQoP C.gss_qop_t
 	major := C.gss_verify_mic(&minor, c.id, &cMessage, &cToken, &cQoP)
 	return g.QoP(cQoP), makeStatus(major, minor)
-}
-
-func mkChannelBindings(cb *g.ChannelBinding) (C.gss_channel_bindings_t, runtime.Pinner) {
-	pinner := runtime.Pinner{}
-	cCB := C.gss_channel_bindings{}
-
-	if cb.InitiatorAddr != nil {
-		af, addrBuf := addrToGssBuff(cb.InitiatorAddr)
-		cCB.initiator_addrtype = C.OM_uint32(af)
-		cCB.initiator_address = addrBuf
-		pinner.Pin(addrBuf.value)
-	}
-
-	if cb.AcceptorAddr != nil {
-		af, addrBuf := addrToGssBuff(cb.AcceptorAddr)
-		cCB.acceptor_addrtype = C.OM_uint32(af)
-		cCB.acceptor_address = addrBuf
-		pinner.Pin(addrBuf.value)
-	}
-
-	cCB.application_data.length = C.size_t(len(cb.Data))
-	cCB.application_data.value = unsafe.Pointer(&cb.Data[0])
-	pinner.Pin(&cb.Data[0])
-
-	return &cCB, pinner
 }
 
 func addrToGssBuff(addr net.Addr) (g.GssAddressFamily, C.gss_buffer_desc) {

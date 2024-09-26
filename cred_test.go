@@ -1,50 +1,13 @@
 package gssapi
 
 import (
-	"encoding/base64"
-	"io"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
 	g "github.com/golang-auth/go-gssapi/v3"
 	"github.com/stretchr/testify/assert"
 )
-
-func writeTmpBase64(b64 string) (string, error) {
-	r := strings.NewReader(b64)
-	decoder := base64.NewDecoder(base64.StdEncoding, r)
-	return writeTmp(decoder)
-}
-
-func writeTmp(r io.Reader) (string, error) {
-	fh, err := os.CreateTemp("", "test")
-	if err != nil {
-		return "", err
-	}
-
-	fn := fh.Name()
-	_, err = io.Copy(fh, r)
-	fh.Close()
-
-	return fn, err
-}
-
-func writeKrbCreds() (kt1, kt2, cc string, err error) {
-	kt1, err = writeTmpBase64(ktdata1)
-	if err != nil {
-		return
-	}
-	kt2, err = writeTmpBase64(ktdata2)
-	if err != nil {
-		return
-	}
-
-	cc, err = writeTmpBase64(ccdata)
-
-	return
-}
 
 func TestAcquireCredentialDefaultName(t *testing.T) {
 	assert := assert.New(t)
@@ -92,9 +55,12 @@ func TestAcquireCredentialDefaultName(t *testing.T) {
 	assert.NoError(err)
 	_, err = lib.AcquireCredential(nil, mechs, g.CredUsageInitiateOnly, 0)
 	assert.NoError(err)
-	_, err = lib.AcquireCredential(nil, mechs, g.CredUsageInitiateAndAccept, 0)
-	assert.NoError(err)
 
+	// Why doesn't Heimdal support acquiring default initiator and acceptor creds in the one call?
+	if !IsHeimdal() {
+		_, err = lib.AcquireCredential(nil, mechs, g.CredUsageInitiateAndAccept, 0)
+		assert.NoError(err)
+	}
 }
 
 func TestAcquireCredentialWithName(t *testing.T) {
@@ -119,8 +85,8 @@ func TestAcquireCredentialWithName(t *testing.T) {
 	os.Setenv("KRB5_KTNAME", ktName)
 	os.Setenv("KRB5CCNAME", "FILE:"+ccName)
 
-	// Try to acquire creds for the initiator name -- should only work for
-	// the initator(!)
+	// Try to acquire creds for the initiator name -- should only work as
+	// an initiator .. we don't have a keytab for the initiator
 	_, err = lib.AcquireCredential(nameInitiator, mechs, g.CredUsageAcceptOnly, 0)
 	assert.Error(err)
 	_, err = lib.AcquireCredential(nameInitiator, mechs, g.CredUsageInitiateOnly, 0)
@@ -128,7 +94,8 @@ func TestAcquireCredentialWithName(t *testing.T) {
 	_, err = lib.AcquireCredential(nameInitiator, mechs, g.CredUsageInitiateAndAccept, 0)
 	assert.Error(err)
 
-	// Try to acquire for the acceptor
+	// Try to acquire for the acceptor name.. only work as an acceptor as we don't
+	// have tickets for that name, only a keytab
 	_, err = lib.AcquireCredential(nameAcceptor, mechs, g.CredUsageAcceptOnly, 0)
 	assert.NoError(err)
 	_, err = lib.AcquireCredential(nameAcceptor, mechs, g.CredUsageInitiateOnly, 0)
@@ -157,7 +124,7 @@ func TestAcquireCredentialWithLifetime(t *testing.T) {
 	lifetime := time.Hour
 
 	// We'll only get an expiry when requesting creds for the initiator, when it
-	// is the expiry time of the TGT (sometime in 2051.. )
+	// is the expiry time of the TGT (sometime in 2032.. )
 
 	_, err = lib.AcquireCredential(nil, mechs, g.CredUsageAcceptOnly, lifetime)
 	assert.NoError(err)
@@ -165,8 +132,10 @@ func TestAcquireCredentialWithLifetime(t *testing.T) {
 	_, err = lib.AcquireCredential(nil, mechs, g.CredUsageInitiateOnly, lifetime)
 	assert.NoError(err)
 
-	_, err = lib.AcquireCredential(nil, mechs, g.CredUsageInitiateAndAccept, lifetime)
-	assert.NoError(err)
+	if !IsHeimdal() {
+		_, err = lib.AcquireCredential(nil, mechs, g.CredUsageInitiateAndAccept, lifetime)
+		assert.NoError(err)
+	}
 }
 
 func TestAcquireCredentialWithDefaultMech(t *testing.T) {
@@ -190,8 +159,10 @@ func TestAcquireCredentialWithDefaultMech(t *testing.T) {
 	_, err = lib.AcquireCredential(nil, nil, g.CredUsageInitiateOnly, 0)
 	assert.NoError(err)
 
-	_, err = lib.AcquireCredential(nil, nil, g.CredUsageInitiateAndAccept, 0)
-	assert.NoError(err)
+	if !IsHeimdal() {
+		_, err = lib.AcquireCredential(nil, nil, g.CredUsageInitiateAndAccept, 0)
+		assert.NoError(err)
+	}
 }
 
 func TestAcquireCredentialMechResult(t *testing.T) {
@@ -248,7 +219,7 @@ func TestInquireCredential(t *testing.T) {
 	assert.Equal(g.GSS_KRB5_NT_PRINCIPAL_NAME, info.NameType)
 	assert.Equal(g.CredUsageInitiateOnly, info.Usage)
 	assert.ElementsMatch([]g.GssMech{g.GSS_MECH_KRB5, g.GSS_MECH_SPNEGO}, info.Mechs)
-	assert.Equal(2051, info.InitiatorExpiry.Year())
+	assert.Equal(2032, info.InitiatorExpiry.Year())
 	assert.Nil(info.AcceptorExpiry)
 }
 
@@ -278,11 +249,16 @@ func TestInquireCredentialByMech(t *testing.T) {
 	assert.Equal(g.GSS_KRB5_NT_PRINCIPAL_NAME, info.NameType)
 	assert.Equal(g.CredUsageInitiateOnly, info.Usage)
 	assert.ElementsMatch([]g.GssMech{g.GSS_MECH_KRB5}, info.Mechs)
-	assert.Equal(2051, info.InitiatorExpiry.Year())
+	assert.Equal(2032, info.InitiatorExpiry.Year())
 	assert.Equal(&time.Time{}, info.AcceptorExpiry)
 }
 
 func TestAddCredential(t *testing.T) {
+	// this is broken in Heimdal
+	if IsHeimdal() {
+		t.SkipNow()
+	}
+
 	assert := assert.New(t)
 	vars := newSaveVars("KRB5_KTNAME", "KRB5CCNAME")
 	defer vars.Restore()

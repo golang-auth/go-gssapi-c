@@ -187,9 +187,21 @@ func (c *Credential) Add(name g.GssName, mech g.GssMech, usage g.CredUsage, init
 	var minor C.OM_uint32
 	var cTimeRecInit, cTimeRecAcc C.OM_uint32
 	var cActualMechs C.gss_OID_set // cActualMechs.elements allocated by GSSAPI; released by *1
-	major := C.gss_add_cred(&minor, c.id, cGssName, cMechOid, C.int(usage), C.OM_uint32(initiatorLifetime.Seconds()), C.OM_uint32(acceptorLifetime.Seconds()), nil, &cActualMechs, &cTimeRecInit, &cTimeRecAcc)
+
+	var cCredOut *C.gss_cred_id_t
+	if IsHeimdal() {
+		var newCred C.gss_cred_id_t
+		cCredOut = &newCred
+	}
+
+	major := C.gss_add_cred(&minor, c.id, cGssName, cMechOid, C.int(usage), C.OM_uint32(initiatorLifetime.Seconds()), C.OM_uint32(acceptorLifetime.Seconds()), cCredOut, &cActualMechs, &cTimeRecInit, &cTimeRecAcc)
 	if major != 0 {
 		return makeMechStatus(major, minor, mech)
+	}
+
+	if IsHeimdal() {
+		c.Release()
+		c.id = *cCredOut
 	}
 
 	return nil

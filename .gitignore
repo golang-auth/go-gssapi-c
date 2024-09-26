@@ -6,6 +6,7 @@
 *.dylib
 *.o
 *.class
+*.swp
 
 examples/c/gss-client-c
 examples/c/gss-server-c

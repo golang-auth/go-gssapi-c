@@ -133,6 +133,10 @@ var cliname = "%CLIENTPRINC%"
 EOF
 
 
+## Midnight on Jan 1 2033 UTC: 1988150400 UNIX time
+NOW=$(date -u +%s)
+LIFETIME=$(( 1988150400 - $NOW ))
+
 kdb5_util create -r ${REALM} -s -P password
 kadmin.local addprinc -pw password admin/admin@${REALM}
 kadmin.local addprinc -pw password -maxlife 10000d ${CLIENT_PRINC}
@@ -151,11 +155,13 @@ KADMINDPID=$!
 
 sleep 3
 
+set +x
+
 kt1file=${TMPDIR}/$(echo "${SERVER_PRINCS[0]}" | sed 's;/;_;g' ).kt
 kt2file=${TMPDIR}/$(echo "${SERVER_PRINCS[0]}" | sed 's;/;_;g' ).kt
 ccfile=${TMPDIR}/${CLIENT_PRINC}.cc
 
-echo 'password' | kinit -c ${ccfile} -l 10000d ${CLIENT_PRINC}
+echo 'password' | kinit -c ${ccfile} -l ${LIFETIME}s ${CLIENT_PRINC}
 KRB5CCNAME=${ccfile} kvno ${SERVER_PRINCS[0]}
 klist -c ${ccfile}
 
