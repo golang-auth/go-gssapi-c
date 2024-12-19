@@ -17,23 +17,40 @@ func TestInquireName(t *testing.T) {
 		t.SkipNow()
 	}
 
-	ta.useAsset(testCfg1)
+	ta.useAsset(testCredCache | testKeytabRack)
 
-	name1, err := ta.lib.ImportName("fooname", g.GSS_NT_USER_NAME)
+	targetName, err := ta.lib.ImportName("rack@foo.golang-auth.io", g.GSS_NT_HOSTBASED_SERVICE)
 	assert.NoErrorFatal(err)
-	defer name1.Release() //nolint:errcheck
+	defer targetName.Release()
 
 	// imported names are not mechanism names unless imported from an exported name
-	isMN, _, err := name1.(*GssName).Inquire()
+	isMN, attrs, err := targetName.(*GssName).Inquire()
 	assert.NoError(err)
 	assert.False(isMN)
+	assert.Empty(attrs)
 
-	// now canonicalize amd try again - this should make it a mechanism name
-	cName1, err := name1.Canonicalize(g.GSS_MECH_KRB5)
+	// .. but the name returned from acceptSecContest is, plus it
+	// should have attributes
+	secCtxInitiator, initiatorTok, err := initContextOne(ta.lib, targetName)
+	assert.NoErrorFatal(err)
+	defer secCtxInitiator.Delete()
+
+	secCtxAcceptor, _, err := acceptContextOne(ta.lib, nil, initiatorTok, nil)
+	assert.NoErrorFatal(err)
+	defer secCtxAcceptor.Delete()
+
+	initiatorInfo, err := secCtxInitiator.Inquire()
 	assert.NoErrorFatal(err)
 
-	isMN, _, err = cName1.(*GssName).Inquire()
+	acceptorInfo, err := secCtxAcceptor.Inquire()
+	assert.NoErrorFatal(err)
+
+	isMN, _, err = initiatorInfo.InitiatorName.(*GssName).Inquire()
 	assert.NoError(err)
 	assert.True(isMN)
 
+	isMN, attrs, err = acceptorInfo.InitiatorName.(*GssName).Inquire()
+	assert.NoError(err)
+	assert.True(isMN)
+	assert.NotEmpty(attrs)
 }

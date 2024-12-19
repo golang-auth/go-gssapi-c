@@ -25,7 +25,8 @@ $(src_dir)/testvecs_test.go: build-tools/mk-test-vectors
 .PHONY: test
 test:
 	./scripts/gofmt
-	${GO} test ./... -coverprofile=./cover.out -covermode=atomic
+	${GO} test ./... -coverprofile=cover.out -covermode=atomic
+	${GO} tool cover -html=cover.out -o coverage.html
 
 
 .PHONY: lint

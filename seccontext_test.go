@@ -2,6 +2,7 @@ package gssapi
 
 import (
 	"errors"
+	"net"
 	"testing"
 
 	g "github.com/golang-auth/go-gssapi/v3"
@@ -182,14 +183,18 @@ func TestContextExpiresAt(t *testing.T) {
 	// both the initiator and the acceptor should know about the expiry time of the kerberos creds
 	tm, err := secCtxInitiator.ExpiresAt()
 	assert.NoError(err)
+	assert.False(tm.IsExpired)
+	assert.False(tm.IsIndefinite)
 	if err == nil {
-		assert.Equal(2033, tm.UTC().Year())
+		assert.Equal(2033, tm.ExpiresAt.UTC().Year())
 	}
 
 	tm, err = secCtxAcceptor.ExpiresAt()
 	assert.NoError(err)
+	assert.False(tm.IsExpired)
+	assert.False(tm.IsIndefinite)
 	if err == nil {
-		assert.Equal(2033, tm.UTC().Year())
+		assert.Equal(2033, tm.ExpiresAt.UTC().Year())
 	}
 }
 
@@ -308,8 +313,9 @@ func TestChannelBindings(t *testing.T) {
 
 	ta.useAsset(testCredCache | testKeytabRack)
 
-	cb1 := g.ChannelBinding{Data: []byte("foo")}
-	cb2 := g.ChannelBinding{Data: []byte("bar")}
+	addr := &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)}
+	cb1 := g.ChannelBinding{InitiatorAddr: addr, AcceptorAddr: addr, Data: []byte("foo")}
+	cb2 := g.ChannelBinding{InitiatorAddr: addr, AcceptorAddr: addr, Data: []byte("bar")}
 
 	tests := []struct {
 		name         string

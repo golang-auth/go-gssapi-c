@@ -184,7 +184,7 @@ func TestInquireCredentialByMech(t *testing.T) {
 	assert.Equal(&time.Time{}, info.AcceptorExpiry)
 }
 
-func TestAddCredential(t *testing.T) {
+func TestAddCredentialInitiator(t *testing.T) {
 	// this is broken in Heimdal
 	if IsHeimdal() {
 		t.SkipNow()
@@ -213,4 +213,26 @@ func TestAddCredential(t *testing.T) {
 	assert.NoErrorFatal(err)
 
 	assert.ElementsMatch([]g.GssMech{g.GSS_MECH_KRB5, g.GSS_MECH_SPNEGO}, info.Mechs)
+}
+
+func TestAddCredentialWithName(t *testing.T) {
+	assert := NewAssert(t)
+
+	mechs := []g.GssMech{g.GSS_MECH_KRB5}
+
+	ruin, err := ta.lib.ImportName(spname2, g.GSS_KRB5_NT_PRINCIPAL_NAME)
+	assert.NoErrorFatal(err)
+
+	// grab the default acceptor cred
+	//	ta.useAsset(testKeytabRack)
+	ta.useAsset(testKeytabRack)
+	cred, err := ta.lib.AcquireCredential(nil, mechs, g.CredUsageAcceptOnly, 0)
+	assert.NoErrorFatal(err)
+	defer cred.Release() //nolint:errcheck
+
+	ta.useAsset(testKeytabRuin)
+	err = cred.Add(ruin, g.GSS_MECH_SPNEGO, g.CredUsageAcceptOnly, 0, 0)
+	assert.NoErrorFatal(err)
+	defer cred.Release() //nolint:errcheck
+
 }

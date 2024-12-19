@@ -19,5 +19,6 @@
 #include <gssapi/gssapi_ext.h>
 #endif
 
-
 int has_channel_bound();
+
+extern gss_buffer_desc gss_empty_buffer;

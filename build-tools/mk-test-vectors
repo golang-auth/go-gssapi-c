@@ -36,7 +36,7 @@ KRB5KDC=${KRB5KDC:-/usr/sbin/krb5kdc}
 REALM=GOLANG-AUTH.IO
 CLIENT_PRINC=robot
 declare -a SERVER_PRINCS
-SERVER_PRINCS=(rack/foo.golang-auth.io ruin/bar.golang-auth.io)
+SERVER_PRINCS=(rack/foo.golang-auth.io ruin/bar.golang-auth.io, ruin/bar.golang-auth.io@GOLANG-AUTH.IO)
 
 if ! [[ -e ${KRB5KDC} ]]
 then
@@ -160,7 +160,7 @@ sleep 3
 set +x
 
 kt1file=${TMPDIR}/$(echo "${SERVER_PRINCS[0]}" | sed 's;/;_;g' ).kt
-kt2file=${TMPDIR}/$(echo "${SERVER_PRINCS[0]}" | sed 's;/;_;g' ).kt
+kt2file=${TMPDIR}/$(echo "${SERVER_PRINCS[1]}" | sed 's;/;_;g' ).kt
 ccfile=${TMPDIR}/${CLIENT_PRINC}.cc
 
 echo 'password' | kinit -c ${ccfile} -l ${LIFETIME}s ${CLIENT_PRINC}

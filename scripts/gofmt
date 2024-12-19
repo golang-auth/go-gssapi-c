@@ -9,18 +9,6 @@ cleanup() {
 trap cleanup EXIT
 
 
-find . -name \*.go -type f \! -name \*_gen.go \
+find . -name '*.go' -type f \! -name '*_gen.go' \! -name testvecs_test.go  \
   | xargs gofmt -l -d
   
-  #  >${TMPDIR}/fmt.out
-
-# if [ -s ${TMPDIR}/fmt.out ];
-# then
-#   echo "The following files are not formatted correctly:"
-#   cat ${TMPDIR}/fmt.out
-#   exit 1
-# fi
-
-# echo "gofmt-output=gofmt step successful"
-# exit 0
-

@@ -24,6 +24,16 @@ func TestImportName(t *testing.T) {
 	assert.ErrorIs(err, g.ErrBadName)
 }
 
+func TestInquireNamesForMech(t *testing.T) {
+	assert := NewAssert(t)
+
+	nameTypes, err := ta.lib.InquireNamesForMech(g.GSS_MECH_KRB5)
+	assert.NoErrorFatal(err)
+	assert.Contains(nameTypes, g.GSS_KRB5_NT_PRINCIPAL_NAME)
+	assert.Contains(nameTypes, g.GSS_NT_USER_NAME)
+	assert.Contains(nameTypes, g.GSS_NT_HOSTBASED_SERVICE)
+}
+
 func TestCompareName(t *testing.T) {
 	assert := NewAssert(t)
 

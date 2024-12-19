@@ -22,8 +22,9 @@ func extractBufferSet(bs C.gss_buffer_set_t) [][]byte {
 func (n *GssName) Inquire() (bool, []string, error) {
 	var minor C.OM_uint32
 	var cNameIsMN C.int
+	var cMech C.gss_OID = C.GSS_C_NO_OID
 	var cAttrs C.gss_buffer_set_t // Freed by *1
-	major := C.gss_inquire_name(&minor, n.name, &cNameIsMN, nil, &cAttrs)
+	major := C.gss_inquire_name(&minor, n.name, &cNameIsMN, &cMech, &cAttrs)
 	if major != 0 {
 		return false, nil, makeStatus(major, minor)
 	}
@@ -32,7 +33,7 @@ func (n *GssName) Inquire() (bool, []string, error) {
 	defer C.gss_release_buffer_set(&minor, &cAttrs)
 
 	attrs := [][]byte{}
-	if cAttrs != nil {
+	if cAttrs != C.GSS_C_NO_BUFFER_SET {
 		attrs = extractBufferSet(cAttrs)
 	}
 

@@ -13,3 +13,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
+replace github.com/golang-auth/go-gssapi/v3 => ../go-gssapi/v3
