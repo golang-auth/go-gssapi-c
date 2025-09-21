@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package gssapi
 
 import (
@@ -43,7 +45,7 @@ func TestAcquireCredentialDefaultName(t *testing.T) {
 	assert.NoError(err)
 
 	// Why doesn't Heimdal support acquiring default initiator and acceptor creds in the one call?
-	if !IsHeimdal() {
+	if !isHeimdal() {
 		_, err = ta.lib.AcquireCredential(nil, mechs, g.CredUsageInitiateAndAccept, 0)
 		assert.NoError(err)
 	}
@@ -52,14 +54,14 @@ func TestAcquireCredentialDefaultName(t *testing.T) {
 func TestAcquireCredentialWithName(t *testing.T) {
 	assert := NewAssert(t)
 
+	ta.useAsset(testCredCache | testKeytabRack | testCfg1)
+
 	mechs := []g.GssMech{g.GSS_MECH_KRB5}
 
-	nameInitiator, err := ta.lib.ImportName(cliname, g.GSS_KRB5_NT_PRINCIPAL_NAME)
+	nameInitiator, err := ta.lib.ImportName(cliname, g.GSS_NT_USER_NAME)
 	assert.NoErrorFatal(err)
 	nameAcceptor, err := ta.lib.ImportName(spname1, g.GSS_KRB5_NT_PRINCIPAL_NAME)
 	assert.NoErrorFatal(err)
-
-	ta.useAsset(testCredCache | testKeytabRack)
 
 	// Try to acquire creds for the initiator name -- should only work as
 	// an initiator .. we don't have a keytab for the initiator
@@ -70,7 +72,7 @@ func TestAcquireCredentialWithName(t *testing.T) {
 	_, err = ta.lib.AcquireCredential(nameInitiator, mechs, g.CredUsageInitiateAndAccept, 0)
 	assert.Error(err)
 
-	// Try to acquire for the acceptor name.. only work as an acceptor as we don't
+	// Try to acquire for the acceptor name.. should only work as an acceptor as we don't
 	// have tickets for that name, only a keytab
 	_, err = ta.lib.AcquireCredential(nameAcceptor, mechs, g.CredUsageAcceptOnly, 0)
 	assert.NoError(err)
@@ -99,7 +101,7 @@ func TestAcquireCredentialWithLifetime(t *testing.T) {
 	_, err = ta.lib.AcquireCredential(nil, mechs, g.CredUsageInitiateOnly, lifetime)
 	assert.NoError(err)
 
-	if !IsHeimdal() {
+	if !isHeimdal() {
 		_, err = ta.lib.AcquireCredential(nil, mechs, g.CredUsageInitiateAndAccept, lifetime)
 		assert.NoError(err)
 	}
@@ -117,7 +119,7 @@ func TestAcquireCredentialWithDefaultMech(t *testing.T) {
 	_, err = ta.lib.AcquireCredential(nil, nil, g.CredUsageInitiateOnly, 0)
 	assert.NoError(err)
 
-	if !IsHeimdal() {
+	if !isHeimdal() {
 		_, err = ta.lib.AcquireCredential(nil, nil, g.CredUsageInitiateAndAccept, 0)
 		assert.NoError(err)
 	}
@@ -186,7 +188,7 @@ func TestInquireCredentialByMech(t *testing.T) {
 
 func TestAddCredentialInitiator(t *testing.T) {
 	// this is broken in Heimdal
-	if IsHeimdal() {
+	if isHeimdal() {
 		t.SkipNow()
 	}
 

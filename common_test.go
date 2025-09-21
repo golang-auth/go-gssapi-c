@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package gssapi
 
 import (
@@ -112,6 +114,8 @@ func mkTestAssets() *testAssets {
 
 func (ta *testAssets) Free() {
 	ta.saveVars.Restore()
+	os.Remove(ta.cfgfile1)
+	os.Remove(ta.cfgfile2)
 	os.Remove(ta.ktfileRack)
 	os.Remove(ta.ktfileRuin)
 	os.Remove(ta.ccfile)

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package gssapi
 
 //lint:file-ignore U1000 Ignore all unused code, it's generated

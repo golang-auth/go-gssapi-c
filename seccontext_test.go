@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package gssapi
 
 import (
@@ -93,7 +95,7 @@ func TestInitSecContext(t *testing.T) {
 
 	_, _, err = initContextOne(ta.lib, name)
 	assert.Error(err)
-	if IsHeimdal() {
+	if isHeimdal() {
 		assert.Contains(err.Error(), "unable to reach any KDC")
 	} else {
 		assert.Contains(err.Error(), "Cannot find KDC")
@@ -183,16 +185,16 @@ func TestContextExpiresAt(t *testing.T) {
 	// both the initiator and the acceptor should know about the expiry time of the kerberos creds
 	tm, err := secCtxInitiator.ExpiresAt()
 	assert.NoError(err)
-	assert.False(tm.IsExpired)
-	assert.False(tm.IsIndefinite)
+	assert.Zero(tm.Status & g.GssLifetimeExpired)
+	assert.Zero(tm.Status & g.GssLifetimeIndefinite)
 	if err == nil {
 		assert.Equal(2033, tm.ExpiresAt.UTC().Year())
 	}
 
 	tm, err = secCtxAcceptor.ExpiresAt()
 	assert.NoError(err)
-	assert.False(tm.IsExpired)
-	assert.False(tm.IsIndefinite)
+	assert.Zero(tm.Status & g.GssLifetimeExpired)
+	assert.Zero(tm.Status & g.GssLifetimeIndefinite)
 	if err == nil {
 		assert.Equal(2033, tm.ExpiresAt.UTC().Year())
 	}

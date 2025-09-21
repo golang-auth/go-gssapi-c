@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package gssapi
 
 /*
@@ -6,6 +8,7 @@ package gssapi
 import "C"
 
 import (
+	"net"
 	"runtime"
 	"unsafe"
 
@@ -91,4 +94,47 @@ func bytesToCBuffer(b []byte) (C.gss_buffer_desc, runtime.Pinner) {
 	}
 
 	return ret, pinner
+}
+
+func addrToGssBuff(addr net.Addr) (g.GssAddressFamily, C.gss_buffer_desc) {
+	var addrType g.GssAddressFamily
+	addrData := []byte{}
+
+	switch a := addr.(type) {
+	case *net.IPAddr:
+		addrType = g.GssAddrFamilyINET
+		addrData = ipData(a.IP)
+	case *net.TCPAddr:
+		addrType = g.GssAddrFamilyINET
+		addrData = ipData(a.IP)
+	case *net.UDPAddr:
+		addrType = g.GssAddrFamilyINET
+		addrData = ipData(a.IP)
+	case *net.UnixAddr:
+		addrType = g.GssAddrFamilyLOCAL
+		addrData = []byte(a.Name)
+	}
+
+	var addrValue unsafe.Pointer
+	if len(addrData) > 0 {
+		addrValue = unsafe.Pointer(&addrData[0])
+	}
+
+	// the pointer (value) is pinned by the caller (mkChannelBindings)
+	return addrType, C.gss_buffer_desc{
+		length: C.size_t(len(addrData)),
+		value:  addrValue,
+	}
+}
+
+func ipData(addr net.IP) (ret net.IP) {
+	if ret = addr.To4(); ret != nil {
+		return ret
+	}
+
+	if ret = addr.To16(); ret != nil {
+		return ret
+	}
+
+	return nil
 }

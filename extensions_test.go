@@ -1,5 +1,7 @@
 //go:build !noextensions
 
+// SPDX-License-Identifier: Apache-2.0
+
 package gssapi
 
 import (
@@ -12,7 +14,7 @@ func TestInquireName(t *testing.T) {
 	assert := NewAssert(t)
 
 	// doest seem to work in Heimdal
-	if IsHeimdal() {
+	if isHeimdal() {
 		t.Log("skipping inquire name on Heimdal")
 		t.SkipNow()
 	}

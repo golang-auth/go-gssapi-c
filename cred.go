@@ -1,7 +1,9 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package gssapi
 
 /*
-#include <gssapi.h>
+#include "gssapi.h"
 
 */
 import "C"
@@ -189,7 +191,7 @@ func (c *Credential) Add(name g.GssName, mech g.GssMech, usage g.CredUsage, init
 	var cActualMechs C.gss_OID_set // cActualMechs.elements allocated by GSSAPI; released by *1
 
 	var cCredOut *C.gss_cred_id_t
-	if IsHeimdal() {
+	if isHeimdal() {
 		var newCred C.gss_cred_id_t
 		cCredOut = &newCred
 	}
@@ -200,7 +202,7 @@ func (c *Credential) Add(name g.GssName, mech g.GssMech, usage g.CredUsage, init
 	}
 
 	var err error
-	if IsHeimdal() {
+	if isHeimdal() {
 		err = c.Release()
 		c.id = *cCredOut
 	}

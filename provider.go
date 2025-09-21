@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package gssapi
 
 import (
@@ -11,6 +13,7 @@ import (
 */
 import "C"
 
+// go-gssapi-c registers itself as a go-gssapi provier using this identifier.
 const LIBID = "GSSAPI-C"
 
 func init() {
@@ -27,12 +30,10 @@ func New() g.Provider {
 	}
 }
 
+// ErrTooLarge indicates that the caller tried to operate on a m.  The C bindings
+// support a maximum 32-bit message.
 var ErrTooLarge = errors.New("the GSSAPI-C bindings only support up to 32 bit messages")
 
-func IsHeimdal() bool {
+func isHeimdal() bool {
 	return C.IS_HEIMDAL == 1
-}
-
-func HasChannelBound() bool {
-	return C.has_channel_bound() == 1
 }

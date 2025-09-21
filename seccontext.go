@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package gssapi
 
 /*
@@ -8,10 +10,8 @@ import "C"
 import (
 	"fmt"
 	"math"
-	"net"
 	"runtime"
 	"time"
-	"unsafe"
 
 	g "github.com/golang-auth/go-gssapi/v3"
 )
@@ -207,6 +207,7 @@ func (c *SecContext) Continue(inputToken []byte) ([]byte, error) {
 	}
 	cMechOid := oid2Coid(mech)
 
+	// TODO : RFC2743 requires that the claimant cred handle be re-used between calls
 	if c.isInitiator {
 		major = C.gss_init_sec_context(&minor, C.GSS_C_NO_CREDENTIAL, &c.id, c.initiatorName.name, cMechOid, 0, 0, nil, &cInputToken, nil, &cOutToken, nil, nil)
 	} else {
@@ -293,9 +294,9 @@ func timeRecToGssLifetime(cTimeRec C.OM_uint32) g.GssLifetime {
 	default:
 		lifetime.ExpiresAt = time.Now().Add(time.Duration(cTimeRec) * time.Second)
 	case cTimeRec == C.GSS_C_INDEFINITE:
-		lifetime.IsIndefinite = true
+		lifetime.Status |= g.GssLifetimeIndefinite
 	case cTimeRec == 0:
-		lifetime.IsExpired = true
+		lifetime.Status |= g.GssLifetimeExpired
 	}
 
 	return lifetime
@@ -307,9 +308,9 @@ func (c *SecContext) Inquire() (*g.SecContextInfo, error) {
 	}
 
 	var minor C.OM_uint32
-	var cSrcName, cTargName C.gss_name_t = C.GSS_C_NO_NAME, C.GSS_C_NO_NAME // allocated by GSSAPI;  released by SecContext.Delete
+	var cSrcName, cTargName C.gss_name_t = C.GSS_C_NO_NAME, C.GSS_C_NO_NAME // allocated by GSSAPI;  released by SecContext.Delete()
 	var cLifetime, cFlags C.OM_uint32
-	var cMechOid C.gss_OID = C.GSS_C_NO_OID // do not free
+	var cMechOid C.gss_OID = C.GSS_C_NO_OID // do not free, pointer to static value returned
 	var cLocallyInitiated, cOpen C.int
 	major := C.gss_inquire_context(&minor, c.id, &cSrcName, &cTargName, &cLifetime, &cMechOid, &cFlags, &cLocallyInitiated, &cOpen)
 
@@ -317,6 +318,9 @@ func (c *SecContext) Inquire() (*g.SecContextInfo, error) {
 		return nil, makeStatus(major, minor)
 	}
 
+	// It is convenient to replace the initiator/acceptor names stored on the SecConext because those
+	// are freed when the context is deleted.  That means we don't need to have the caller of Inquire()
+	// free these directly.
 	if c.initiatorName != nil {
 		_ = c.initiatorName.Release()
 	}
@@ -363,6 +367,10 @@ func (c *SecContext) WrapSizeLimit(confRequired bool, maxWrapSize uint, qop g.Qo
 	}
 	if qop > math.MaxUint32 {
 		return 0, g.ErrBadQop
+	}
+
+	if confRequired {
+		cConfReq = 1
 	}
 
 	major := C.gss_wrap_size_limit(&minor, c.id, cConfReq, C.gss_qop_t(qop), C.OM_uint32(maxWrapSize), &cMaxInputSize)
@@ -487,47 +495,4 @@ func (c *SecContext) VerifyMIC(msg, token []byte) (g.QoP, error) {
 	var cQoP C.gss_qop_t
 	major := C.gss_verify_mic(&minor, c.id, &cMessage, &cToken, &cQoP)
 	return g.QoP(cQoP), makeStatus(major, minor)
-}
-
-func addrToGssBuff(addr net.Addr) (g.GssAddressFamily, C.gss_buffer_desc) {
-	var addrType g.GssAddressFamily
-	addrData := []byte{}
-
-	switch a := addr.(type) {
-	case *net.IPAddr:
-		addrType = g.GssAddrFamilyINET
-		addrData = ipData(a.IP)
-	case *net.TCPAddr:
-		addrType = g.GssAddrFamilyINET
-		addrData = ipData(a.IP)
-	case *net.UDPAddr:
-		addrType = g.GssAddrFamilyINET
-		addrData = ipData(a.IP)
-	case *net.UnixAddr:
-		addrType = g.GssAddrFamilyLOCAL
-		addrData = []byte(a.Name)
-	}
-
-	var addrValue unsafe.Pointer
-	if len(addrData) > 0 {
-		addrValue = unsafe.Pointer(&addrData[0])
-	}
-
-	// the pointer (value) is pinned by the caller (mkChannelBindings)
-	return addrType, C.gss_buffer_desc{
-		length: C.size_t(len(addrData)),
-		value:  addrValue,
-	}
-}
-
-func ipData(addr net.IP) (ret net.IP) {
-	if ret = addr.To4(); ret != nil {
-		return ret
-	}
-
-	if ret = addr.To16(); ret != nil {
-		return ret
-	}
-
-	return nil
 }
