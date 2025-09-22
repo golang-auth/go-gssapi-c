@@ -14,10 +14,10 @@ jobs:
     steps:
     - uses: actions/checkout@v4
   
-    - name: Set up Go 1.22
+    - name: Set up Go 1.24
       uses: actions/setup-go@v5
       with:
-          go-version: 1.22.x
+          go-version: 1.24.x
 
     - name: OS details
       run: |
@@ -33,10 +33,10 @@ jobs:
       run: ./.github/scripts/gofmt
 
     - name: Static check
-      uses: dominikh/staticcheck-action@v1.3.1
+      uses: dominikh/staticcheck-action@v1
 
     - name: golangci-lint
-      uses: golangci/golangci-lint-action@v6
+      uses: golangci/golangci-lint-action@v8
       with:
         version: latest
 
@@ -48,7 +48,7 @@ jobs:
 #        os: ['windows-latest', 'ubuntu-latest']
 #        os: ['ubuntu-latest', 'macos-latest']
         os: ['ubuntu-latest']
-        go-version: ['1.21.x', '1.22.x' ]
+        go-version: ['1.24.x', '1.25.x' ]
 
     runs-on: ${{ matrix.os }}
 

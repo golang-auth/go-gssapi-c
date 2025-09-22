@@ -1,9 +1,9 @@
 module github.com/golang-auth/go-gssapi-c
 
-go 1.18
+go 1.24
 
 require (
-	github.com/golang-auth/go-gssapi/v3 v3.0.0-alpha.2
+	github.com/golang-auth/go-gssapi/v3 v3.0.0-alpha.3
 	github.com/stretchr/testify v1.9.0
 )
 
@@ -12,4 +12,3 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
