@@ -290,12 +290,12 @@ func (c *SecContext) ExpiresAt() (*g.GssLifetime, error) {
 func timeRecToGssLifetime(cTimeRec C.OM_uint32) g.GssLifetime {
 	lifetime := g.GssLifetime{}
 
-	switch {
+	switch cTimeRec {
 	default:
 		lifetime.ExpiresAt = time.Now().Add(time.Duration(cTimeRec) * time.Second)
-	case cTimeRec == C.GSS_C_INDEFINITE:
+	case C.GSS_C_INDEFINITE:
 		lifetime.Status |= g.GssLifetimeIndefinite
-	case cTimeRec == 0:
+	case 0:
 		lifetime.Status |= g.GssLifetimeExpired
 	}
 

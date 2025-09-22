@@ -23,7 +23,7 @@ func TestInquireName(t *testing.T) {
 
 	targetName, err := ta.lib.ImportName("rack@foo.golang-auth.io", g.GSS_NT_HOSTBASED_SERVICE)
 	assert.NoErrorFatal(err)
-	defer targetName.Release()
+	defer func() { _ = targetName.Release() }()
 
 	// imported names are not mechanism names unless imported from an exported name
 	isMN, attrs, err := targetName.(*GssName).Inquire()
@@ -35,11 +35,11 @@ func TestInquireName(t *testing.T) {
 	// should have attributes
 	secCtxInitiator, initiatorTok, err := initContextOne(ta.lib, targetName)
 	assert.NoErrorFatal(err)
-	defer secCtxInitiator.Delete()
+	defer func() { _, _ = secCtxInitiator.Delete() }()
 
 	secCtxAcceptor, _, err := acceptContextOne(ta.lib, nil, initiatorTok, nil)
 	assert.NoErrorFatal(err)
-	defer secCtxAcceptor.Delete()
+	defer func() { _, _ = secCtxAcceptor.Delete() }()
 
 	initiatorInfo, err := secCtxInitiator.Inquire()
 	assert.NoErrorFatal(err)

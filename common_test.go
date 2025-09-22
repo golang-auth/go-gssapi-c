@@ -31,7 +31,7 @@ type myassert struct {
 
 // Fail the test immediately on error
 func (a *myassert) NoErrorFatal(err error) {
-	a.Assertions.NoError(err)
+	a.NoError(err)
 	if err != nil {
 		a.t.Logf("Stopping test %s due to fatal error", a.t.Name())
 		a.t.FailNow()
@@ -68,9 +68,9 @@ func newSaveVars(varNames ...string) saveVars {
 func (sv saveVars) Restore() {
 	for varName, varVal := range sv.vars {
 		if varVal == "" {
-			os.Unsetenv(varName)
+			_ = os.Unsetenv(varName)
 		} else {
-			os.Setenv(varName, varVal)
+			_ = os.Setenv(varName, varVal)
 		}
 	}
 }
@@ -114,11 +114,11 @@ func mkTestAssets() *testAssets {
 
 func (ta *testAssets) Free() {
 	ta.saveVars.Restore()
-	os.Remove(ta.cfgfile1)
-	os.Remove(ta.cfgfile2)
-	os.Remove(ta.ktfileRack)
-	os.Remove(ta.ktfileRuin)
-	os.Remove(ta.ccfile)
+	_ = os.Remove(ta.cfgfile1)
+	_ = os.Remove(ta.cfgfile2)
+	_ = os.Remove(ta.ktfileRack)
+	_ = os.Remove(ta.ktfileRuin)
+	_ = os.Remove(ta.ccfile)
 }
 
 type testAssetType int
@@ -137,33 +137,33 @@ const (
 func (ta *testAssets) useAsset(at testAssetType) {
 	switch {
 	default:
-		os.Unsetenv("KRB5_KTNAME")
+		_ = os.Unsetenv("KRB5_KTNAME")
 	case at&testKeytabRack > 0:
-		os.Setenv("KRB5_KTNAME", ta.ktfileRack)
+		_ = os.Setenv("KRB5_KTNAME", ta.ktfileRack)
 	case at&testKeytabRuin > 0:
-		os.Setenv("KRB5_KTNAME", ta.ktfileRuin)
+		_ = os.Setenv("KRB5_KTNAME", ta.ktfileRuin)
 	case at&testNoKeytab > 0:
-		os.Setenv("KRB5_KTNAME", "/no/such/file")
+		_ = os.Setenv("KRB5_KTNAME", "/no/such/file")
 	}
 
 	switch {
 	default:
-		os.Unsetenv("KRB5CCNAME")
+		_ = os.Unsetenv("KRB5CCNAME")
 	case at&testCredCache > 0:
-		os.Setenv("KRB5CCNAME", "FILE:"+ta.ccfile)
+		_ = os.Setenv("KRB5CCNAME", "FILE:"+ta.ccfile)
 	case at&testNoCredCache > 0:
-		os.Setenv("KRB5CCNAME", "FILE:/no/such/file")
+		_ = os.Setenv("KRB5CCNAME", "FILE:/no/such/file")
 	}
 
 	switch {
 	default:
-		os.Unsetenv("KRB5_CONFIG")
+		_ = os.Unsetenv("KRB5_CONFIG")
 	case at&testCfg1 > 0:
-		os.Setenv("KRB5_CONFIG", ta.cfgfile1)
+		_ = os.Setenv("KRB5_CONFIG", ta.cfgfile1)
 	case at&testCfg2 > 0:
-		os.Setenv("KRB5_CONFIG", ta.cfgfile2)
+		_ = os.Setenv("KRB5_CONFIG", ta.cfgfile2)
 	case at&testNoCfg > 0:
-		os.Setenv("KRB5_CONFIG", "/no/such/file")
+		_ = os.Setenv("KRB5_CONFIG", "/no/such/file")
 	}
 }
 
@@ -183,7 +183,7 @@ func writeTmp(r io.Reader) (string, error) {
 
 	fn := fh.Name()
 	_, err = io.Copy(fh, r)
-	fh.Close()
+	_ = fh.Close()
 
 	return fn, err
 }
@@ -228,7 +228,7 @@ func writeKrb5Confs() (f1, f2 string, err error) {
 	if _, err = io.WriteString(fh, krb5Conf1); err != nil {
 		return
 	}
-	fh.Close()
+	_ = fh.Close()
 
 	fh, err = os.CreateTemp("", "test")
 	if err != nil {
@@ -239,7 +239,7 @@ func writeKrb5Confs() (f1, f2 string, err error) {
 	if _, err = io.WriteString(fh, krb5Conf2); err != nil {
 		return
 	}
-	fh.Close()
+	_ = fh.Close()
 
 	return
 }
