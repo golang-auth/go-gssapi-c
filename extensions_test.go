@@ -56,3 +56,11 @@ func TestInquireName(t *testing.T) {
 	assert.True(isMN)
 	assert.NotEmpty(attrs)
 }
+
+func TestHasExtension(t *testing.T) {
+	assert := NewAssert(t)
+
+	assert.True(ta.lib.HasExtension(g.GssapiExtHasChannelBound))
+	assert.True(ta.lib.HasExtension(g.GssapiExtHasInquireName))
+	assert.False(ta.lib.HasExtension(-1))
+}

@@ -30,7 +30,7 @@ test:
 
 
 .PHONY: lint
-lint: | $(TOOLBIN)/golangci-lint
+lint: | $(TOOLBIN)/golangci-lint $(TOOLBIN)/staticcheck
 	@echo ------ golangci-lint
 	@echo ------
 	$(TOOLBIN)/golangci-lint run
@@ -46,4 +46,4 @@ $(TOOLBIN)/golangci-lint: | $(GOENV)
 	GOBIN=$(TOOLBIN) GO111MODULE=on $(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@v1
 
 $(TOOLBIN)/staticcheck: ~$(GOENV)
-	GOBIN=$(TOOLBIN) GO111MODULE=on $(GO) install honnef.co/go/tools/cmd/staticcheck@2024.1
+	GOBIN=$(TOOLBIN) GO111MODULE=on $(GO) install honnef.co/go/tools/cmd/staticcheck@2025.1.1
