@@ -92,20 +92,14 @@ func (c *Credential) Inquire() (*g.CredInfo, error) {
 		Usage:    g.CredUsage(cCredUsage),
 	}
 
-	if cTimeRec != C.GSS_C_INDEFINITE {
-		var t time.Time
-		if cTimeRec != 0 {
-			t = time.Now().Add(time.Second * time.Duration(cTimeRec)).Round(time.Second)
-		}
-		switch ret.Usage {
-		default:
-			ret.AcceptorExpiry = &t
-			ret.InitiatorExpiry = &t
-		case g.CredUsageAcceptOnly:
-			ret.AcceptorExpiry = &t
-		case g.CredUsageInitiateOnly:
-			ret.InitiatorExpiry = &t
-		}
+	switch ret.Usage {
+	case g.CredUsageInitiateOnly:
+		ret.InitiatorExpiry = timeRecToGssLifetime(cTimeRec)
+	case g.CredUsageAcceptOnly:
+		ret.AcceptorExpiry = timeRecToGssLifetime(cTimeRec)
+	case g.CredUsageInitiateAndAccept:
+		ret.InitiatorExpiry = timeRecToGssLifetime(cTimeRec)
+		ret.AcceptorExpiry = timeRecToGssLifetime(cTimeRec)
 	}
 
 	actualMechOids := oidsFromGssOidSet(cMechs)
@@ -149,25 +143,12 @@ func (c *Credential) InquireByMech(mech g.GssMech) (*g.CredInfo, error) {
 	}
 
 	ret := &g.CredInfo{
-		Name:     name,
-		NameType: nameType,
-		Usage:    g.CredUsage(cCredUsage),
-		Mechs:    []g.GssMech{mech},
-	}
-
-	if cTimeRecInit != C.GSS_C_INDEFINITE {
-		var t time.Time
-		if cTimeRecInit != 0 {
-			t = time.Now().Add(time.Second * time.Duration(cTimeRecInit)).Round(time.Second)
-		}
-		ret.InitiatorExpiry = &t
-	}
-	if cTimeRecAcc != C.GSS_C_INDEFINITE {
-		var t time.Time
-		if cTimeRecAcc != 0 {
-			t = time.Now().Add(time.Second * time.Duration(cTimeRecAcc)).Round(time.Second)
-		}
-		ret.AcceptorExpiry = &t
+		Name:            name,
+		NameType:        nameType,
+		Usage:           g.CredUsage(cCredUsage),
+		Mechs:           []g.GssMech{mech},
+		InitiatorExpiry: timeRecToGssLifetime(cTimeRecInit),
+		AcceptorExpiry:  timeRecToGssLifetime(cTimeRecAcc),
 	}
 
 	return ret, nil

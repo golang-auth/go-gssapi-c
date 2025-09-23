@@ -161,8 +161,8 @@ func TestInquireCredential(t *testing.T) {
 	assert.Equal(g.GSS_KRB5_NT_PRINCIPAL_NAME, info.NameType)
 	assert.Equal(g.CredUsageInitiateOnly, info.Usage)
 	assert.ElementsMatch([]g.GssMech{g.GSS_MECH_KRB5, g.GSS_MECH_SPNEGO}, info.Mechs)
-	assert.Equal(2033, info.InitiatorExpiry.UTC().Year())
-	assert.Nil(info.AcceptorExpiry)
+	assert.Equal(g.GssLifetimeAvailable, info.InitiatorExpiry.Status)
+	assert.Equal(2033, info.InitiatorExpiry.ExpiresAt.UTC().Year())
 }
 
 func TestInquireCredentialByMech(t *testing.T) {
@@ -182,8 +182,8 @@ func TestInquireCredentialByMech(t *testing.T) {
 	assert.Equal(g.GSS_KRB5_NT_PRINCIPAL_NAME, info.NameType)
 	assert.Equal(g.CredUsageInitiateOnly, info.Usage)
 	assert.ElementsMatch([]g.GssMech{g.GSS_MECH_KRB5}, info.Mechs)
-	assert.Equal(2033, info.InitiatorExpiry.UTC().Year())
-	assert.Equal(&time.Time{}, info.AcceptorExpiry)
+	assert.Equal(g.GssLifetimeAvailable, info.InitiatorExpiry.Status)
+	assert.Equal(2033, info.InitiatorExpiry.ExpiresAt.UTC().Year())
 }
 
 func TestAddCredentialInitiator(t *testing.T) {
