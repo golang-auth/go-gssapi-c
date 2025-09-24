@@ -60,7 +60,7 @@ func (provider) InquireNamesForMech(mech g.GssMech) ([]g.GssNameType, error) {
 	seen := make(map[string]bool)
 
 	for _, oid := range nameTypeOids {
-		nt, err := g.NameFromOid(oid)
+		nt, err := g.NameTypeFromOid(oid)
 		switch {
 		default:
 			ntStr := nt.String()
@@ -112,7 +112,7 @@ func (n *GssName) Display() (string, g.GssNameType, error) {
 	name := C.GoBytes(cOutputBuf.value, C.int(cOutputBuf.length))
 
 	oid := oidFromGssOid(cOutType)
-	nameType, err := g.NameFromOid(oid)
+	nameType, err := g.NameTypeFromOid(oid)
 	if err != nil {
 		return "", g.GSS_NO_OID, makeStatus(major, minor)
 	}
