@@ -15,7 +15,7 @@ import "C"
 
 func (p *provider) HasExtension(e g.GssapiExtension) bool {
 	switch e {
-	case g.HasExtChannelBound:
+	case g.HasExtChannelBindingSignalling:
 		return C.has_channel_bound() == 1
 	case g.HasExtLocalname:
 		return true
