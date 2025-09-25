@@ -14,7 +14,7 @@ import (
 import "C"
 
 // go-gssapi-c registers itself as a go-gssapi provier using this identifier.
-const LIBID = "GSSAPI-C"
+const LIBID = "github.com/golang-auth/go-gssapi-c"
 
 func init() {
 	g.RegisterProvider(LIBID, New)
@@ -24,10 +24,14 @@ type provider struct {
 	name string
 }
 
-func New() g.Provider {
+func New() (g.Provider, error) {
 	return &provider{
 		name: LIBID,
-	}
+	}, nil
+}
+
+func (p provider) Name() string {
+	return LIBID
 }
 
 // ErrTooLarge indicates that the caller tried to operate on a m.  The C bindings

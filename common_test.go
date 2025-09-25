@@ -87,9 +87,13 @@ type testAssets struct {
 }
 
 func mkTestAssets() *testAssets {
+	p, err := New()
+	if err != nil {
+		panic(err)
+	}
 	ta := &testAssets{
 		saveVars: newSaveVars("KRB5_KTNAME", "KRB5CCNAME", "KRB5_CONFIG"),
-		lib:      New(),
+		lib:      p,
 	}
 
 	ktName1, krName2, ccName, err := writeKrbCreds()

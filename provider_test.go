@@ -10,6 +10,7 @@ import (
 )
 
 func TestProvider(t *testing.T) {
-	p := g.NewProvider("GSSAPI-C")
+	p, err := g.NewProvider("github.com/golang-auth/go-gssapi-c")
+	assert.NoError(t, err)
 	assert.IsType(t, &provider{}, p)
 }
