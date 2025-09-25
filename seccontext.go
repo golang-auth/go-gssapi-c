@@ -26,7 +26,8 @@ type SecContext struct {
 	initiatorName *GssName
 	acceptorName  *GssName
 
-	initOptions *g.InitSecContextOptions
+	initOptions   *g.InitSecContextOptions
+	acceptOptions *g.AcceptSecContextOptions
 }
 
 func hasChannelBound() bool {
@@ -63,13 +64,15 @@ func (provider) InitSecContext(name g.GssName, opts ...g.InitSecContextOption) (
 	}, nil
 }
 
-func (provider) AcceptSecContext(cred g.Credential, cb *g.ChannelBinding) (g.SecContext, error) {
+func (provider) AcceptSecContext(opts ...g.AcceptSecContextOption) (g.SecContext, error) {
+	o := g.AcceptSecContextOptions{}
+	for _, opt := range opts {
+		opt(&o)
+	}
+
 	return &SecContext{
-		isInitiator: false,
-		initOptions: &g.InitSecContextOptions{
-			Credential:     cred,
-			ChannelBinding: cb,
-		},
+		isInitiator:   false,
+		acceptOptions: &o,
 	}, nil
 }
 
@@ -127,7 +130,7 @@ func (c *SecContext) initSecContext() ([]byte, error) {
 func (c *SecContext) acceptSecContext(inputToken []byte) ([]byte, error) {
 	// get the C cred ID and name
 	var cGssCred C.gss_cred_id_t = C.GSS_C_NO_CREDENTIAL
-	if c.initOptions.Credential != nil {
+	if c.acceptOptions.Credential != nil {
 		credImpl, ok := c.initOptions.Credential.(*Credential) // must be *our* impl
 		if !ok {
 			return nil, fmt.Errorf("bad credential type %T, %w", credImpl, g.ErrDefectiveCredential)

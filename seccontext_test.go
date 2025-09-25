@@ -42,7 +42,14 @@ func initContextOne(provider g.Provider, name g.GssName, opts ...g.InitSecContex
 }
 
 func acceptContextOne(provider g.Provider, cred g.Credential, inTok []byte, cb *g.ChannelBinding) (g.SecContext, []byte, error) {
-	secCtx, err := provider.AcceptSecContext(cred, cb)
+	var opts []g.AcceptSecContextOption
+	if cred != nil {
+		opts = append(opts, g.WithAcceptorCredential(cred))
+	}
+	if cb != nil {
+		opts = append(opts, g.WithAcceptorChannelBinding(cb))
+	}
+	secCtx, err := provider.AcceptSecContext(opts...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -264,7 +271,7 @@ func TestSecContextEstablishment(t *testing.T) {
 	secCtxInitiator, err := ta.lib.InitSecContext(name, g.WithInitiatorFlags(g.ContextFlagMutual))
 	assert.NoErrorFatal(err)
 
-	secCtxAcceptor, err := ta.lib.AcceptSecContext(nil, nil)
+	secCtxAcceptor, err := ta.lib.AcceptSecContext()
 	assert.NoErrorFatal(err)
 
 	var initiatorTok, acceptorTok []byte
@@ -355,7 +362,7 @@ func TestChannelBindings(t *testing.T) {
 			reqOpts := []g.InitSecContextOption{g.WithInitiatorFlags(reqFlags)}
 
 			if tt.icb != nil {
-				reqOpts = append(reqOpts, g.WithChannelBinding(tt.icb))
+				reqOpts = append(reqOpts, g.WithInitiatorChannelBinding(tt.icb))
 			}
 
 			_, initiatorTok, err := initContextOne(ta.lib, name, reqOpts...)
