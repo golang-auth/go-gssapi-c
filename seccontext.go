@@ -71,8 +71,9 @@ func (provider) AcceptSecContext(opts ...g.AcceptSecContextOption) (g.SecContext
 	}
 
 	return &SecContext{
-		isInitiator:   false,
-		acceptOptions: &o,
+		isInitiator:    false,
+		continueNeeded: true,
+		acceptOptions:  &o,
 	}, nil
 }
 
@@ -120,7 +121,10 @@ func (c *SecContext) initSecContext() ([]byte, error) {
 
 	pinnerCB.Unpin()
 
-	outToken := C.GoBytes(cOutToken.value, C.int(cOutToken.length))
+	var outToken []byte = nil
+	if cOutToken != C.gss_empty_buffer {
+		outToken = C.GoBytes(cOutToken.value, C.int(cOutToken.length))
+	}
 	c.continueNeeded = major == C.GSS_S_CONTINUE_NEEDED
 	c.id = cGssCtxId
 
@@ -131,7 +135,7 @@ func (c *SecContext) acceptSecContext(inputToken []byte) ([]byte, error) {
 	// get the C cred ID and name
 	var cGssCred C.gss_cred_id_t = C.GSS_C_NO_CREDENTIAL
 	if c.acceptOptions.Credential != nil {
-		credImpl, ok := c.initOptions.Credential.(*Credential) // must be *our* impl
+		credImpl, ok := c.acceptOptions.Credential.(*Credential) // must be *our* impl
 		if !ok {
 			return nil, fmt.Errorf("bad credential type %T, %w", credImpl, g.ErrDefectiveCredential)
 		}
@@ -141,8 +145,8 @@ func (c *SecContext) acceptSecContext(inputToken []byte) ([]byte, error) {
 
 	var cChBindings C.gss_channel_bindings_t = C.GSS_C_NO_CHANNEL_BINDINGS
 	pinnerCb := runtime.Pinner{}
-	if c.initOptions.ChannelBinding != nil {
-		cChBindings, pinnerCb = mkChannelBindings(c.initOptions.ChannelBinding)
+	if c.acceptOptions.ChannelBinding != nil {
+		cChBindings, pinnerCb = mkChannelBindings(c.acceptOptions.ChannelBinding)
 	}
 	defer pinnerCb.Unpin()
 
@@ -163,7 +167,11 @@ func (c *SecContext) acceptSecContext(inputToken []byte) ([]byte, error) {
 
 	pinnerCb.Unpin()
 
-	outToken := C.GoBytes(cOutToken.value, C.int(cOutToken.length))
+	var outToken []byte = nil
+	if cOutToken != C.gss_empty_buffer {
+		outToken = C.GoBytes(cOutToken.value, C.int(cOutToken.length))
+	}
+	c.continueNeeded = major == C.GSS_S_CONTINUE_NEEDED
 	c.id = cGssCtxId
 	c.acceptorName = &GssName{cSrcName}
 	return outToken, nil
@@ -210,7 +218,6 @@ func (c *SecContext) Continue(inputToken []byte) ([]byte, error) {
 	}
 	cMechOid := oid2Coid(mech)
 
-	// TODO : RFC2743 requires that the claimant cred handle be re-used between calls
 	if c.isInitiator {
 		major = C.gss_init_sec_context(&minor, C.GSS_C_NO_CREDENTIAL, &c.id, c.initiatorName.name, cMechOid, 0, 0, nil, &cInputToken, nil, &cOutToken, nil, nil)
 	} else {
@@ -224,7 +231,11 @@ func (c *SecContext) Continue(inputToken []byte) ([]byte, error) {
 	// *1  release GSSAPI allocated buffer
 	defer C.gss_release_buffer(&minor, &cOutToken)
 
-	outToken := C.GoBytes(cOutToken.value, C.int(cOutToken.length))
+	var outToken []byte = nil
+	if cOutToken != C.gss_empty_buffer {
+		outToken = C.GoBytes(cOutToken.value, C.int(cOutToken.length))
+	}
+
 	c.continueNeeded = major == C.GSS_S_CONTINUE_NEEDED
 	return outToken, nil
 }
