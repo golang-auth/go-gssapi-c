@@ -30,7 +30,7 @@ type FatalCallingError struct {
 	CallingErrorCode CallingErrorCode
 }
 
-// Errors specific to the C bindings
+// CallingErrorCode errors specific to the C bindings
 type CallingErrorCode uint32
 
 const (
@@ -48,7 +48,7 @@ var ErrInaccessibleWrite = errors.New("a required output parameter could not be 
 // ErrBadStructure is returned when the value of a parameter is invalid
 var ErrBadStructure = errors.New("a parameter was malformed")
 
-// Calling() returns the calling error associated with the combined error
+// Calling returns the calling error associated with the combined error
 func (s FatalCallingError) Calling() error {
 	switch s.CallingErrorCode {
 	default:
@@ -76,7 +76,7 @@ func (s FatalCallingError) Unwrap() []error {
 	return ret
 }
 
-// Error() implements error.Error().  It returns the error string that
+// Error implements error.Error().  It returns the error string that
 // [gssapi.FatalStatus()] would return, prepended by any calling
 // errors.
 func (s FatalCallingError) Error() string {
@@ -98,14 +98,29 @@ func makeStatus(major, minor C.OM_uint32) error {
 	return makeMechStatus(major, minor, nil)
 }
 
+func makeCustomStatus(major C.OM_uint32, customErrs ...error) error {
+	err := makeMechStatus(major, 0, nil)
+
+	switch err := err.(type) {
+	case g.InfoStatus:
+		err.MechErrors = customErrs
+		return err
+	case g.FatalStatus:
+		err.MechErrors = customErrs
+		return err
+	}
+
+	return err
+}
+
 func makeMechStatus(major, minor C.OM_uint32, mech g.GssMech) error {
 	if major == 0 {
 		return nil
 	}
 
 	// see RFC 2744 § 3.9.1
-	calling_error := (major & 0xFF000000) >> 24 // bad call by us to gssapi
-	routine_error := (major & 0x00FF0000) >> 16 // the "Fatal" errors
+	callingError := (major & 0xFF000000) >> 24 // bad call by us to gssapi
+	routineError := (major & 0x00FF0000) >> 16 // the "Fatal" errors
 	supplementary := major & 0xffff
 
 	// all errors are at least informational
@@ -124,24 +139,24 @@ func makeMechStatus(major, minor C.OM_uint32, mech g.GssMech) error {
 	}
 
 	// its just an informational if there is no calling or routine error
-	if routine_error == 0 && calling_error == 0 {
+	if routineError == 0 && callingError == 0 {
 		return info
 	}
 
 	// its always fatal if thre is a calling or routine error
 	fatal := g.FatalStatus{
-		FatalErrorCode: g.FatalErrorCode(routine_error),
+		FatalErrorCode: g.FatalErrorCode(routineError),
 		InfoStatus:     info,
 	}
 
 	// and just a fatal error from the interface if there is no calling error
-	if calling_error == 0 {
+	if callingError == 0 {
 		return fatal
 	}
 
 	// if there is a C binding calling error then indicate that..
 	return FatalCallingError{
-		CallingErrorCode: CallingErrorCode(calling_error),
+		CallingErrorCode: CallingErrorCode(callingError),
 		FatalStatus:      fatal,
 	}
 }

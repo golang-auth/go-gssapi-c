@@ -8,5 +8,13 @@ int has_channel_bound() {
 #endif
 }
 
- gss_buffer_desc gss_empty_buffer = GSS_C_EMPTY_BUFFER;
+int is_mac_framework() {
+#if defined(OSX_HAS_GSS_FRAMEWORK)
+	return 1;
+#else
+	return 0;
+#endif
+}
+
+gss_buffer_desc gss_empty_buffer = GSS_C_EMPTY_BUFFER;
  

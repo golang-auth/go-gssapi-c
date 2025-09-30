@@ -4,6 +4,7 @@ package gssapi
 
 import (
 	"encoding/base64"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -15,9 +16,20 @@ import (
 
 //go:generate  build-tools/mk-test-vectors -o testvecs_test.go
 
+func init() {
+	// RC4 woes
+	if isHeimdalFreeBSD() {
+		_ = os.Setenv("OPENSSL_CONF", "./openssl.cnf")
+	}
+}
+
 func TestMain(m *testing.M) {
 	ta = mkTestAssets()
 	defer ta.Free()
+
+	fmt.Fprintf(os.Stderr, "isHeimdal: %v\n", isHeimdal())
+
+	ta.useAsset(nil, testCfg1)
 
 	m.Run()
 }
@@ -49,41 +61,14 @@ func releaseName(name g.GssName) {
 	}
 }
 
-type saveVars struct {
-	vars map[string]string
-}
-
-func newSaveVars(varNames ...string) saveVars {
-	sv := saveVars{
-		vars: make(map[string]string),
-	}
-
-	for _, varName := range varNames {
-		sv.vars[varName] = os.Getenv(varName)
-	}
-
-	return sv
-}
-
-func (sv saveVars) Restore() {
-	for varName, varVal := range sv.vars {
-		if varVal == "" {
-			_ = os.Unsetenv(varName)
-		} else {
-			_ = os.Setenv(varName, varVal)
-		}
-	}
-}
-
 type testAssets struct {
 	ktfileRack string
 	ktfileRuin string
+	ktfileAll  string
 	ccfile     string
 	cfgfile1   string
 	cfgfile2   string
 	lib        g.Provider
-
-	saveVars saveVars
 }
 
 func mkTestAssets() *testAssets {
@@ -92,17 +77,17 @@ func mkTestAssets() *testAssets {
 		panic(err)
 	}
 	ta := &testAssets{
-		saveVars: newSaveVars("KRB5_KTNAME", "KRB5CCNAME", "KRB5_CONFIG"),
-		lib:      p,
+		lib: p,
 	}
 
-	ktName1, krName2, ccName, err := writeKrbCreds()
+	ktName1, krName2, ktNameAll, ccName, err := writeKrbCreds()
 	if err != nil {
 		panic(err)
 	}
 
 	ta.ktfileRack = ktName1
 	ta.ktfileRuin = krName2
+	ta.ktfileAll = ktNameAll
 	ta.ccfile = ccName
 
 	cfName1, cfName2, err := writeKrb5Confs()
@@ -117,11 +102,11 @@ func mkTestAssets() *testAssets {
 }
 
 func (ta *testAssets) Free() {
-	ta.saveVars.Restore()
 	_ = os.Remove(ta.cfgfile1)
 	_ = os.Remove(ta.cfgfile2)
 	_ = os.Remove(ta.ktfileRack)
 	_ = os.Remove(ta.ktfileRuin)
+	_ = os.Remove(ta.ktfileAll)
 	_ = os.Remove(ta.ccfile)
 }
 
@@ -130,6 +115,7 @@ type testAssetType int
 const (
 	testKeytabRack testAssetType = 1 << iota
 	testKeytabRuin
+	testKeytabAll
 	testCredCache
 	testNoCredCache
 	testNoKeytab
@@ -138,36 +124,63 @@ const (
 	testNoCfg
 )
 
-func (ta *testAssets) useAsset(at testAssetType) {
+func (ta *testAssets) useAsset(t *testing.T, at testAssetType) {
+	if !ta.lib.HasExtension(g.HasExtKrb5Identity) {
+		if t != nil {
+			t.Skip("skipping test, provider does not support krb5 identity")
+		}
+		return
+	}
+
+	p := ta.lib.(g.ProviderExtKrb5Identity)
+
+	var err error
 	switch {
-	default:
-		_ = os.Unsetenv("KRB5_KTNAME")
+	case at&testKeytabAll > 0:
+		err = p.RegisterAcceptorIdentity("FILE:" + ta.ktfileAll)
 	case at&testKeytabRack > 0:
-		_ = os.Setenv("KRB5_KTNAME", ta.ktfileRack)
+		err = p.RegisterAcceptorIdentity("FILE:" + ta.ktfileRack)
 	case at&testKeytabRuin > 0:
-		_ = os.Setenv("KRB5_KTNAME", ta.ktfileRuin)
+		err = p.RegisterAcceptorIdentity("FILE:" + ta.ktfileRuin)
 	case at&testNoKeytab > 0:
-		_ = os.Setenv("KRB5_KTNAME", "/no/such/file")
+		err = p.RegisterAcceptorIdentity("/no/such/file")
+	}
+
+	if err != nil {
+		if t != nil {
+			t.Logf("RegisterAcceptorIdentity failed: %v", err)
+		} else {
+			panic(err)
+		}
 	}
 
 	switch {
-	default:
-		_ = os.Unsetenv("KRB5CCNAME")
 	case at&testCredCache > 0:
-		_ = os.Setenv("KRB5CCNAME", "FILE:"+ta.ccfile)
+		err = p.SetCCacheName("FILE:" + ta.ccfile)
 	case at&testNoCredCache > 0:
-		_ = os.Setenv("KRB5CCNAME", "FILE:/no/such/file")
+		err = p.SetCCacheName("FILE:/no/such/file")
+	}
+
+	if err != nil {
+		if t != nil {
+			t.Logf("RegisterAcceptorIdentity failed: %v", err)
+		} else {
+			panic(err)
+		}
+	}
+
+	f := func(k, v string) { _ = os.Setenv(k, v) }
+	if t != nil {
+		f = t.Setenv
 	}
 
 	switch {
-	default:
-		_ = os.Unsetenv("KRB5_CONFIG")
 	case at&testCfg1 > 0:
-		_ = os.Setenv("KRB5_CONFIG", ta.cfgfile1)
+		f("KRB5_CONFIG", ta.cfgfile1)
 	case at&testCfg2 > 0:
-		_ = os.Setenv("KRB5_CONFIG", ta.cfgfile2)
+		f("KRB5_CONFIG", ta.cfgfile2)
 	case at&testNoCfg > 0:
-		_ = os.Setenv("KRB5_CONFIG", "/no/such/file")
+		f("KRB5_CONFIG", "/no/such/file")
 	}
 }
 
@@ -185,19 +198,28 @@ func writeTmp(r io.Reader) (string, error) {
 		return "", err
 	}
 
+	defer fh.Close() //nolint:errcheck
+
+	if err = fh.Chmod(0600); err != nil {
+		return "", err
+	}
+
 	fn := fh.Name()
 	_, err = io.Copy(fh, r)
-	_ = fh.Close()
 
 	return fn, err
 }
 
-func writeKrbCreds() (kt1, kt2, cc string, err error) {
+func writeKrbCreds() (kt1, kt2, ktAll, cc string, err error) {
 	kt1, err = writeTmpBase64(ktdata1)
 	if err != nil {
 		return
 	}
 	kt2, err = writeTmpBase64(ktdata2)
+	if err != nil {
+		return
+	}
+	ktAll, err = writeTmpBase64(ktdataAll)
 	if err != nil {
 		return
 	}
@@ -212,7 +234,7 @@ var krb5Conf1 = `
 [libdefaults]
 
 dns_lookup_realm = false
-default_realm = FOO.COM
+default_realm = GOLANG-AUTH.IO
 `
 
 // missing default realm

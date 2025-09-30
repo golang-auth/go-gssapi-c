@@ -138,3 +138,29 @@ func ipData(addr net.IP) (ret net.IP) {
 
 	return nil
 }
+
+func gssLifetimeToSeconds(lifetime *g.GssLifetime) C.OM_uint32 {
+	if lifetime == nil {
+		return C.GSS_C_INDEFINITE
+	}
+
+	switch lifetime.Status {
+	case g.GssLifetimeIndefinite:
+		return C.GSS_C_INDEFINITE
+	case g.GssLifetimeExpired:
+		return C.OM_uint32(0)
+	default:
+		return C.OM_uint32(lifetime.ExpiresAt.Unix())
+	}
+}
+
+func extractBufferSet(bs C.gss_buffer_set_t) [][]byte {
+	out := make([][]byte, bs.count)
+
+	bufSlice := unsafe.Slice(bs.elements, bs.count)
+	for i, buf := range bufSlice {
+		out[i] = C.GoBytes(buf.value, C.int(buf.length))
+	}
+
+	return out
+}

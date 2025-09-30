@@ -1,19 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
+// Package gssapi is a Go GSSAPI provides using the C bindings defined in RFC 2744.
 package gssapi
 
 import (
 	"errors"
+	"runtime"
 
 	g "github.com/golang-auth/go-gssapi/v3"
 )
 
 /*
 #include "gss.h"
+#include <dlfcn.h>
 */
 import "C"
 
-// go-gssapi-c registers itself as a go-gssapi provier using this identifier.
+// LIBID is the string that go-gssapi-c registers itself as a go-gssapi provier.
 const LIBID = "github.com/golang-auth/go-gssapi-c"
 
 func init() {
@@ -40,4 +43,49 @@ var ErrTooLarge = errors.New("the GSSAPI-C bindings only support up to 32 bit me
 
 func isHeimdal() bool {
 	return C.IS_HEIMDAL == 1
+}
+
+func isHeimdalBefore7() bool {
+	// gss_unwrap_aead appeared in Heimdal 7.0.1
+	// gss_compare_name seems to work more intuitively from that release.
+	return isHeimdal() && !hasSymbol("gss_unwrap_aead")
+}
+
+func isHeimdalAfter7() bool {
+	return isHeimdal() && hasSymbol("gss_unwrap_aead")
+}
+
+func isHeimdalWorkingAddCred() bool {
+	// gss_duplicate_cred appeared in commit e6d1c10808b (unreleased)
+	// this commit introduced the rewrite of gss_add_cred which was basically
+	// unusable before then.
+	return isHeimdal() && hasSymbol("gss_duplicate_cred")
+}
+
+func hasChannelBound() bool {
+	return C.has_channel_bound() == 1
+}
+
+func isHeimdalMac() bool {
+	return C.is_mac_framework() == 1
+}
+
+func isHeimdalFreeBSD() bool {
+	return isHeimdalBefore7() && runtime.GOOS == "freebsd"
+}
+
+func (p *provider) HasExtension(e g.GssapiExtension) bool {
+	switch e {
+	default:
+		// unknown extension
+		return false
+	case g.HasExtChannelBindingSignalling:
+		return hasChannelBound()
+	case g.HasExtLocalname:
+		return hasSymbol("gss_localname")
+	case g.HasExtKrb5Identity:
+		return (hasSymbol("krb5_gss_register_acceptor_identity") ||
+			hasSymbol("gsskrb5_register_acceptor_identity")) &&
+			hasSymbol("gss_krb5_ccache_name")
+	}
 }

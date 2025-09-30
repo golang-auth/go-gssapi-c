@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -x
 
 ## This script uses a temporary KDC instance to create test
 #  Kerberos keytabs and a credentials cache for use as test
@@ -36,7 +36,7 @@ KRB5KDC=${KRB5KDC:-/usr/sbin/krb5kdc}
 REALM=GOLANG-AUTH.IO
 CLIENT_PRINC=robot
 declare -a SERVER_PRINCS
-SERVER_PRINCS=(rack/foo.golang-auth.io ruin/bar.golang-auth.io, ruin/bar.golang-auth.io@GOLANG-AUTH.IO)
+SERVER_PRINCS=(rack/foo.golang-auth.io ruin/bar.golang-auth.io)
 
 if ! [[ -e ${KRB5KDC} ]]
 then
@@ -127,6 +127,9 @@ const spname1 = "%SPN1%"
 var ktdata2 = `%KT2DATA%`
 const spname2 = "%SPN2%"
 
+// ktdataAll is a Kerberos keytab for %SPN1% and %SPN2%
+var ktdataAll = `%K1DATAALL%`
+
 // ccdata is a Kerberos credentials cache for client principal %CLIENTPRINC%
 // containing a TGT with expiry date in 2051 and a service ticket for
 // %SPN1%
@@ -142,12 +145,15 @@ LIFETIME=$(( 1988150400 - $NOW ))
 kdb5_util create -r ${REALM} -s -P password
 kadmin.local addprinc -pw password admin/admin@${REALM}
 kadmin.local addprinc -pw password -maxlife 10000d ${CLIENT_PRINC}
+
 for princ in ${SERVER_PRINCS[@]}
 do
     ktfile=${TMPDIR}/$(echo ${princ} | sed 's;/;_;g').kt
     kadmin.local addprinc -randkey ${princ}
     kadmin.local ktadd -k ${ktfile} ${princ}
 done
+
+
 
 krb5kdc -n &
 KDCPID=$!
@@ -156,6 +162,22 @@ kadmind -nofork &
 KADMINDPID=$!
 
 sleep 3
+
+
+cat <<EOF > ${TMPDIR}/ktutil.script
+    add_entry -password -p robot@${REALM} -k 1 -f
+    password
+EOF
+
+for princ in ${SERVER_PRINCS[@]}
+do
+    ktfile=${TMPDIR}/$(echo ${princ} | sed 's;/;_;g').kt
+    echo "rkt ${ktfile}" >> ${TMPDIR}/ktutil.script
+done
+
+ktfile=${TMPDIR}/all.kt
+echo "wkt ${ktfile}" >> ${TMPDIR}/ktutil.script
+ktutil < ${TMPDIR}/ktutil.script
 
 set +x
 
@@ -172,6 +194,7 @@ sed " s;%SPN1%;${SERVER_PRINCS[0]}@${REALM};g
       s;%CLIENTPRINC%;${CLIENT_PRINC}@${REALM};g
       s;%KT1DATA%;$(base64 -w 0 ${kt1file});
       s;%KT2DATA%;$(base64 -w 0 ${kt2file});
+      s;%K1DATAALL%;$(base64 -w 0 ${ktfile});
       s;%CCDATA%;$(base64 -w 0 ${ccfile});
       s;%TOOL%;$0;
     " ${TMPDIR}/package.tmpl > ${OUTFILE}

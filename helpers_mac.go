@@ -26,6 +26,9 @@ void *_get_oid_elements(gss_OID oid) {
 import "C"
 
 func oidFromGssOid(cOid C.gss_OID) g.Oid {
+	if cOid == C.GSS_C_NO_OID {
+		return nil
+	}
 	// Go doesn't know about the elements field of the gss_OID_desc struct
 	// because it doesn't support packed structs.  The elements field is
 	// 32 bits into the struct (after the length field)

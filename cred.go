@@ -2,31 +2,39 @@
 
 package gssapi
 
+//#cgo !openbsd LDFLAGS: -ldl
 /*
-#include "gssapi.h"
-
+#include "gss.h"
 */
 import "C"
 
 import (
 	"errors"
 	"fmt"
-	"time"
 
 	g "github.com/golang-auth/go-gssapi/v3"
 )
 
 type Credential struct {
 	id C.gss_cred_id_t
+
+	// store usage because FreeBSD base GSSAPI is broken and doesn't return the correct usage
+	usage g.CredUsage
+
+	isFromNoName bool
 }
 
-func (provider) AcquireCredential(name g.GssName, mechs []g.GssMech, usage g.CredUsage, lifetime time.Duration) (g.Credential, error) {
+func hasDuplicateCred() bool {
+	return hasSymbol("gss_duplicate_cred")
+}
+
+func (provider) AcquireCredential(name g.GssName, mechs []g.GssMech, usage g.CredUsage, lifetime *g.GssLifetime) (g.Credential, error) {
 	// turn the mechs into an array of OIDs
 	gssOidSet := gssOidSetFromOids(mechsToOids(mechs))
 	gssOidSet.Pin()
 	defer gssOidSet.Unpin()
 
-	var cGssName C.gss_name_t
+	var cGssName C.gss_name_t = C.GSS_C_NO_NAME
 	if name != nil {
 		lName, ok := name.(*GssName)
 		if !ok {
@@ -37,22 +45,24 @@ func (provider) AcquireCredential(name g.GssName, mechs []g.GssMech, usage g.Cre
 	}
 
 	var minor C.OM_uint32
-	var cCredId C.gss_cred_id_t
-	major := C.gss_acquire_cred(&minor, cGssName, C.OM_uint32(lifetime.Seconds()), gssOidSet.oidSet, C.int(usage), &cCredId, nil, nil)
+	var cCredID C.gss_cred_id_t = C.GSS_C_NO_CREDENTIAL
+	major := C.gss_acquire_cred(&minor, cGssName, gssLifetimeToSeconds(lifetime), gssOidSet.oidSet, C.int(usage), &cCredID, nil, nil)
 
 	if major != 0 {
 		return nil, makeStatus(major, minor)
 	}
 
 	cred := &Credential{
-		id: cCredId,
+		id:           cCredID,
+		usage:        usage,
+		isFromNoName: cGssName == C.GSS_C_NO_NAME,
 	}
 
 	return cred, nil
 }
 
 func (c *Credential) Release() error {
-	if c.id == nil {
+	if c == nil || c.id == nil {
 		return nil
 	}
 	var minor C.OM_uint32
@@ -76,20 +86,30 @@ func (c *Credential) Inquire() (*g.CredInfo, error) {
 	// *2  release GSSAPI allocated array
 	defer C.gss_release_oid_set(&minor, &cMechs)
 
-	gssName := nameFromGssInternal(cGssName)
-
 	// *1  release GSSAPI name
-	defer gssName.Release() //nolint:all
+	gssName := nameFromGssInternal(cGssName)
+	defer gssName.Release() //nolint:errcheck
 
-	name, nameType, err := gssName.Display()
-	if err != nil {
-		return nil, err
+	// We can't find any info about the name if the cred was acquired without a name on recent Heimdal versions.
+	name, nameType := "", g.GssNameType(g.GSS_NO_NAME)
+	if !(isHeimdalAfter7() && c.isFromNoName && c.usage == g.CredUsageAcceptOnly) {
+		var err error
+		name, nameType, err = gssName.Display()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var usage g.CredUsage = g.CredUsage(cCredUsage)
+	if isHeimdalFreeBSD() {
+		// FreeBSD gets it wrong.. use the value used to acquire the credential
+		usage = c.usage
 	}
 
 	ret := &g.CredInfo{
 		Name:     name,
 		NameType: nameType,
-		Usage:    g.CredUsage(cCredUsage),
+		Usage:    usage,
 	}
 
 	switch ret.Usage {
@@ -135,17 +155,32 @@ func (c *Credential) InquireByMech(mech g.GssMech) (*g.CredInfo, error) {
 	gssName := nameFromGssInternal(cGssName)
 
 	// *1  release GSSAPI name
-	defer gssName.Release() //nolint:all
+	defer gssName.Release() //nolint:errcheck
 
-	name, nameType, err := gssName.Display()
-	if err != nil {
-		return nil, err
+	// We can't find any info about the name if the cred was acquired without a name on recent Heimdal versions.
+	name, nameType := "", g.GssNameType(g.GSS_NO_NAME)
+	if !(isHeimdalAfter7() && c.isFromNoName && c.usage == g.CredUsageAcceptOnly) {
+		var err error
+		name, nameType, err = gssName.Display()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var usage g.CredUsage = g.CredUsage(cCredUsage)
+	if isHeimdalFreeBSD() {
+		// FreeBSD gets it wrong.. use the value used to acquire the credential
+		usage = c.usage
+
+		if usage == g.CredUsageInitiateOnly {
+			cTimeRecInit, cTimeRecAcc = cTimeRecAcc, cTimeRecInit
+		}
 	}
 
 	ret := &g.CredInfo{
 		Name:            name,
 		NameType:        nameType,
-		Usage:           g.CredUsage(cCredUsage),
+		Usage:           usage,
 		Mechs:           []g.GssMech{mech},
 		InitiatorExpiry: timeRecToGssLifetime(cTimeRecInit),
 		AcceptorExpiry:  timeRecToGssLifetime(cTimeRecAcc),
@@ -154,39 +189,44 @@ func (c *Credential) InquireByMech(mech g.GssMech) (*g.CredInfo, error) {
 	return ret, nil
 }
 
-func (c *Credential) Add(name g.GssName, mech g.GssMech, usage g.CredUsage, initiatorLifetime time.Duration, acceptorLifetime time.Duration) error {
-	cMechOid := oid2Coid(mech.Oid())
+func (c *Credential) Add(name g.GssName, mech g.GssMech, usage g.CredUsage, initiatorLifetime *g.GssLifetime, acceptorLifetime *g.GssLifetime, mutate bool) (g.Credential, error) {
+	// old versions of Heimdal such as those in *BSD and Mac based systems have a
+	// non-functional gss_add_cred implementation.
+	if isHeimdal() && !isHeimdalWorkingAddCred() {
+		err := makeCustomStatus(C.GSS_S_UNAVAILABLE, fmt.Errorf("gss_add_cred is not available when using this version of Heimdal"))
+		return nil, err
+	}
 
-	var cGssName C.gss_name_t
+	var cMechOid C.gss_OID = C.GSS_C_NO_OID
+	if mech != nil {
+		cMechOid = oid2Coid(mech.Oid())
+	}
+
+	var cGssName C.gss_name_t = C.GSS_C_NO_NAME
 	if name != nil {
 		lName, ok := name.(*GssName)
 		if !ok {
-			return fmt.Errorf("bad name type %T, %w", name, g.ErrBadName)
+			return nil, fmt.Errorf("bad name type %T, %w", name, g.ErrBadName)
 		}
 
 		cGssName = lName.name
 	}
 
 	var minor C.OM_uint32
-	var cTimeRecInit, cTimeRecAcc C.OM_uint32
-	var cActualMechs C.gss_OID_set // cActualMechs.elements allocated by GSSAPI; released by *1
-
-	var cCredOut *C.gss_cred_id_t
-	if isHeimdal() {
-		var newCred C.gss_cred_id_t
-		cCredOut = &newCred
+	var cCredOut C.gss_cred_id_t = C.GSS_C_NO_CREDENTIAL
+	var cpCredOut *C.gss_cred_id_t = nil
+	if !mutate {
+		cpCredOut = &cCredOut
 	}
 
-	major := C.gss_add_cred(&minor, c.id, cGssName, cMechOid, C.int(usage), C.OM_uint32(initiatorLifetime.Seconds()), C.OM_uint32(acceptorLifetime.Seconds()), cCredOut, &cActualMechs, &cTimeRecInit, &cTimeRecAcc)
+	major := C.gss_add_cred(&minor, c.id, cGssName, cMechOid, C.int(usage), gssLifetimeToSeconds(initiatorLifetime), gssLifetimeToSeconds(acceptorLifetime), cpCredOut, nil, nil, nil)
 	if major != 0 {
-		return makeMechStatus(major, minor, mech)
+		return nil, makeMechStatus(major, minor, mech)
 	}
 
-	var err error
-	if isHeimdal() {
-		err = c.Release()
-		c.id = *cCredOut
+	if mutate {
+		return c, nil
+	} else {
+		return &Credential{id: cCredOut}, nil
 	}
-
-	return err
 }

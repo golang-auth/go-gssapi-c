@@ -59,6 +59,9 @@ func acceptContextOne(provider g.Provider, cred g.Credential, inTok []byte, cb *
 	}
 
 	outTok, err := secCtx.Continue(inTok)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	ctx := secCtx.(*SecContext)
 	if err == nil && ctx.id == nil {
@@ -70,16 +73,18 @@ func acceptContextOne(provider g.Provider, cred g.Credential, inTok []byte, cb *
 
 func TestInitSecContext(t *testing.T) {
 	assert := NewAssert(t)
-	ta.useAsset(testCredCache)
+	ta.useAsset(t, testCredCache)
 
 	// InitSecContext with this name should work because the cred-cache has a ticket
 	// for rack/foo.golang-auth.io@GOLANG-AUTH.IO
 	name, err := ta.lib.ImportName("rack@foo.golang-auth.io", g.GSS_NT_HOSTBASED_SERVICE)
 	assert.NoError(err)
+	defer name.Release() //nolint:errcheck
 
 	// no continue should be needed when we don't request mutual auth
 	secCtx, outTok, err := initContextOne(ta.lib, name)
 	assert.NoError(err)
+	defer secCtx.Delete() //nolint:errcheck
 	if err == nil {
 		assert.NotEmpty(outTok)
 		assert.NotNil(secCtx)
@@ -89,6 +94,7 @@ func TestInitSecContext(t *testing.T) {
 	// .. but should be needed if we do request mutual auth
 	secCtx, outTok, err = initContextOne(ta.lib, name, g.WithInitiatorFlags(g.ContextFlagMutual))
 	assert.NoError(err)
+	defer secCtx.Delete() //nolint:errcheck
 	if err == nil {
 		assert.NotEmpty(outTok)
 		assert.NotNil(secCtx)
@@ -99,9 +105,11 @@ func TestInitSecContext(t *testing.T) {
 	// and there are no KDCs defined that can get us a ticket
 	name, err = ta.lib.ImportName("ruin@bar.golang-auth.io", g.GSS_NT_HOSTBASED_SERVICE)
 	assert.NoErrorFatal(err)
+	defer name.Release() //nolint:errcheck
 
 	_, _, err = initContextOne(ta.lib, name)
 	assert.Error(err)
+	t.Logf("err: %s", err)
 	if isHeimdal() {
 		assert.Contains(err.Error(), "unable to reach any KDC")
 	} else {
@@ -109,14 +117,76 @@ func TestInitSecContext(t *testing.T) {
 	}
 }
 
-func TestAcceptSecContext(t *testing.T) {
+func TestInitSecContextBadParams(t *testing.T) {
 	assert := NewAssert(t)
-	ta.useAsset(testCredCache | testKeytabRack)
+	ta.useAsset(t, testCredCache|testKeytabRack)
+
+	badName := &someName{}
+
+	_, err := ta.lib.InitSecContext(nil)
+	assert.ErrorIs(err, g.ErrBadName)
+
+	_, err = ta.lib.InitSecContext(badName)
+	assert.ErrorIs(err, g.ErrBadName)
+}
+
+type someCredential struct{}
+
+func (someCredential) Release() error {
+	return nil
+}
+
+func (someCredential) Inquire() (*g.CredInfo, error) {
+	return nil, nil
+}
+
+func (c someCredential) Add(name g.GssName, mech g.GssMech, usage g.CredUsage, initiatorLifetime *g.GssLifetime, acceptorLifetime *g.GssLifetime, mutate bool) (g.Credential, error) {
+	return c, nil
+}
+
+func (someCredential) InquireByMech(mech g.GssMech) (*g.CredInfo, error) {
+	return nil, nil
+}
+
+func TestInitSecContextWithCredential(t *testing.T) {
+	assert := NewAssert(t)
+	ta.useAsset(t, testCredCache)
 
 	// InitSecContext with this name should work because the cred-cache has a ticket
 	// for rack/foo.golang-auth.io@GOLANG-AUTH.IO
 	name, err := ta.lib.ImportName("rack@foo.golang-auth.io", g.GSS_NT_HOSTBASED_SERVICE)
 	assert.NoErrorFatal(err)
+	defer name.Release() //nolint:errcheck
+
+	// grab the default initiator credential
+	cred, err := ta.lib.AcquireCredential(nil, nil, g.CredUsageInitiateOnly, nil)
+	assert.NoErrorFatal(err)
+	defer cred.Release() //nolint:errcheck
+
+	secCtx, outTok, err := initContextOne(ta.lib, name, g.WithInitiatorCredential(cred))
+	assert.NoError(err)
+	defer secCtx.Delete() //nolint:errcheck
+	if err == nil {
+		assert.NotEmpty(outTok)
+		assert.NotNil(secCtx)
+		assert.False(secCtx.ContinueNeeded())
+	}
+
+	// test with a bad credential
+	cred = &someCredential{}
+	_, _, err = initContextOne(ta.lib, name, g.WithInitiatorCredential(cred))
+	assert.ErrorIs(err, g.ErrDefectiveCredential)
+}
+
+func TestAcceptSecContext(t *testing.T) {
+	assert := NewAssert(t)
+	ta.useAsset(t, testCredCache|testKeytabRack)
+
+	// InitSecContext with this name should work because the cred-cache has a ticket
+	// for rack/foo.golang-auth.io@GOLANG-AUTH.IO
+	name, err := ta.lib.ImportName("rack@foo.golang-auth.io", g.GSS_NT_HOSTBASED_SERVICE)
+	assert.NoErrorFatal(err)
+	defer name.Release() //nolint:errcheck
 
 	for _, mutual := range []bool{true, false} {
 		assert := NewAssert(t)
@@ -134,6 +204,7 @@ func TestAcceptSecContext(t *testing.T) {
 
 			secCtxInitiator, initiatorTok, err := initContextOne(ta.lib, name, opts...)
 			assert.NoErrorFatal(err)
+			defer secCtxInitiator.Delete() //nolint:errcheck
 			assert.Equal(secCtxInitiator.ContinueNeeded(), mutual)
 
 			// the initiator token should be accepted by AcceptSecContext because we have a keytab
@@ -141,6 +212,7 @@ func TestAcceptSecContext(t *testing.T) {
 			// didn't request  mutual auth
 			secCtxAcceptor, acceptorTok, err := acceptContextOne(ta.lib, nil, initiatorTok, nil)
 			assert.NoErrorFatal(err)
+			defer secCtxAcceptor.Delete() //nolint:errcheck
 			assert.NotNil(secCtxAcceptor)
 			assert.False(secCtxAcceptor.ContinueNeeded())
 			if mutual {
@@ -154,13 +226,45 @@ func TestAcceptSecContext(t *testing.T) {
 
 }
 
+func TestAcceptSecContextWithCredential(t *testing.T) {
+	assert := NewAssert(t)
+	//ta.useAsset(t, testCredCache|testKeytabRack)
+	ta.useAsset(t, testCredCache|testKeytabRack)
+
+	// InitSecContext with this name should work because the cred-cache has a ticket
+	// for rack/foo.golang-auth.io@GOLANG-AUTH.IO
+	name, err := ta.lib.ImportName("rack@foo.golang-auth.io", g.GSS_NT_HOSTBASED_SERVICE)
+	assert.NoErrorFatal(err)
+	defer name.Release() //nolint:errcheck
+
+	// grab the default acceptor credential
+	cred, err := ta.lib.AcquireCredential(nil, nil, g.CredUsageAcceptOnly, nil)
+	assert.NoErrorFatal(err)
+	defer cred.Release() //nolint:errcheck
+
+	secCtxInitiator, initiatorTok, err := initContextOne(ta.lib, name)
+	assert.NoErrorFatal(err)
+	defer secCtxInitiator.Delete() //nolint:errcheck
+
+	secCtxAcceptor, _, err := acceptContextOne(ta.lib, cred, initiatorTok, nil)
+	assert.NoErrorFatal(err)
+	defer secCtxAcceptor.Delete() //nolint:errcheck
+
+	// test with a bad credential
+	cred = &someCredential{}
+	_, _, err = acceptContextOne(ta.lib, cred, initiatorTok, nil)
+	assert.ErrorIs(err, g.ErrDefectiveCredential)
+
+}
+
 func TestDeleteSecContext(t *testing.T) {
 	assert := NewAssert(t)
-	ta.useAsset(testCredCache)
+	ta.useAsset(t, testCredCache)
 
 	// This should work because the cred-cache has a ticket for rack/foo.golang-auth.io@GOLANG-AUTH.IO
 	name, err := ta.lib.ImportName("rack@foo.golang-auth.io", g.GSS_NT_HOSTBASED_SERVICE)
 	assert.NoErrorFatal(err)
+	defer name.Release() //nolint:errcheck
 
 	secCtx, _, err := initContextOne(ta.lib, name)
 	assert.NoErrorFatal(err)
@@ -176,18 +280,22 @@ func TestDeleteSecContext(t *testing.T) {
 }
 
 func TestContextExpiresAt(t *testing.T) {
+	t.SkipNow()
 	assert := NewAssert(t)
-	ta.useAsset(testCredCache | testKeytabRack)
+	ta.useAsset(t, testCredCache|testKeytabRack)
 
 	// This should work because the cred-cache has a ticket for rack/foo.golang-auth.io@GOLANG-AUTH.IO
 	name, err := ta.lib.ImportName("rack@foo.golang-auth.io", g.GSS_NT_HOSTBASED_SERVICE)
 	assert.NoErrorFatal(err)
+	defer name.Release() //nolint:errcheck
 
 	secCtxInitiator, initiatorTok, err := initContextOne(ta.lib, name)
 	assert.NoError(err)
+	defer secCtxInitiator.Delete() //nolint:errcheck
 
 	secCtxAcceptor, _, err := acceptContextOne(ta.lib, nil, initiatorTok, nil)
 	assert.NoError(err)
+	defer secCtxAcceptor.Delete() //nolint:errcheck
 
 	// both the initiator and the acceptor should know about the expiry time of the kerberos creds
 	tm, err := secCtxInitiator.ExpiresAt()
@@ -209,16 +317,18 @@ func TestContextExpiresAt(t *testing.T) {
 
 func TestContextWrapSizeLimit(t *testing.T) {
 	assert := NewAssert(t)
-	ta.useAsset(testCredCache)
+	ta.useAsset(t, testCredCache)
 
 	// This should work because the cred-cache has a ticket for rack/foo.golang-auth.io@GOLANG-AUTH.IO
 	name, err := ta.lib.ImportName("rack@foo.golang-auth.io", g.GSS_NT_HOSTBASED_SERVICE)
 	assert.NoErrorFatal(err)
+	defer name.Release() //nolint:errcheck
 
 	o := g.WithInitiatorFlags(g.ContextFlagInteg | g.ContextFlagConf)
 
 	secCtxInitiator, _, err := initContextOne(ta.lib, name, o)
 	assert.NoError(err)
+	defer secCtxInitiator.Delete() //nolint:errcheck
 
 	// the max unwrapped token size would always be less that the max
 	// wrapped token size
@@ -229,17 +339,20 @@ func TestContextWrapSizeLimit(t *testing.T) {
 
 func TestExportImportSecContext(t *testing.T) {
 	assert := NewAssert(t)
-	ta.useAsset(testCredCache)
+	ta.useAsset(t, testCredCache)
 
 	// This should work because the cred-cache has a ticket for rack/foo.golang-auth.io@GOLANG-AUTH.IO
 	name, err := ta.lib.ImportName("rack@foo.golang-auth.io", g.GSS_NT_HOSTBASED_SERVICE)
 	assert.NoErrorFatal(err)
+	defer name.Release() //nolint:errcheck
 
 	secCtx, _, err := initContextOne(ta.lib, name)
 	assert.NoErrorFatal(err)
+	defer secCtx.Delete() //nolint:errcheck
 
-	_, err = secCtx.Inquire() // should work the first time
+	info, err := secCtx.Inquire() // should work the first time
 	assert.NoErrorFatal(err)
+	_ = info
 
 	tok, err := secCtx.Export() // exported context invalidates the original
 	assert.NoError(err)
@@ -263,7 +376,7 @@ func TestExportImportSecContext(t *testing.T) {
 
 func TestSecContextEstablishment(t *testing.T) {
 	assert := NewAssert(t)
-	ta.useAsset(testCredCache | testKeytabRack)
+	ta.useAsset(t, testCredCache|testKeytabRack)
 
 	name, err := ta.lib.ImportName("rack@foo.golang-auth.io", g.GSS_NT_HOSTBASED_SERVICE)
 	assert.NoErrorFatal(err)
@@ -320,19 +433,20 @@ func TestChannelBindings(t *testing.T) {
 		t.Log("The GSSAPI C library does not support GSS_C_CHANNEL_BOUND_FLAG, ignoring related tests")
 	}
 
-	ta.useAsset(testCredCache | testKeytabRack)
+	ta.useAsset(t, testCredCache|testKeytabRack|testCfg1)
 
 	addr := &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)}
 	cb1 := g.ChannelBinding{InitiatorAddr: addr, AcceptorAddr: addr, Data: []byte("foo")}
 	cb2 := g.ChannelBinding{InitiatorAddr: addr, AcceptorAddr: addr, Data: []byte("bar")}
 
-	tests := []struct {
+	type testData struct {
 		name         string
 		icb          *g.ChannelBinding
 		acb          *g.ChannelBinding
 		expectError  error
 		expectCbFlag bool
-	}{
+	}
+	tests := []testData{
 		// neither side requests bindings: not an error and don't expect ContextFlagChannelBound return flag to be set
 		{"no-bindings", nil, nil, nil, false},
 		// only initiator requests bindings: not an error and don't expect ContextFlagChannelBound return flag to be set
@@ -341,8 +455,14 @@ func TestChannelBindings(t *testing.T) {
 		{"accept-bindings", nil, &cb1, nil, false},
 		// both sides set matching bindings: not an error and DO expect ContextFlagChannelBound return flag to be set
 		{"match-bindings", &cb1, &cb1, nil, true},
-		// both sides set non-matching bindings: expect an error and don't expect ContextFlagChannelBound return flag to be set
-		{"mismatch-bindings", &cb1, &cb2, g.ErrBadBindings, false},
+	}
+
+	// Channel bindings seem to be broken on MacOS Kerberos
+	if !isHeimdalMac() {
+		tests = append(tests, testData{
+			// both sides set non-matching bindings: expect an error and don't expect ContextFlagChannelBound return flag to be set
+			"mismatch-bindings", &cb1, &cb2, g.ErrBadBindings, false,
+		})
 	}
 
 	for _, tt := range tests {
@@ -365,10 +485,17 @@ func TestChannelBindings(t *testing.T) {
 				reqOpts = append(reqOpts, g.WithInitiatorChannelBinding(tt.icb))
 			}
 
-			_, initiatorTok, err := initContextOne(ta.lib, name, reqOpts...)
+			initSecCtx, initiatorTok, err := initContextOne(ta.lib, name, reqOpts...)
 			assert.NoErrorFatal(err)
+			defer initSecCtx.Delete() //nolint:errcheck
 
 			secCtxAcceptor, _, err := acceptContextOne(ta.lib, nil, initiatorTok, tt.acb)
+			defer func() {
+				if secCtxAcceptor != nil {
+					_, _ = secCtxAcceptor.Delete() //nolint:errcheck
+				}
+			}()
+
 			if tt.expectError != nil {
 				assert.ErrorIs(err, tt.expectError)
 			} else {

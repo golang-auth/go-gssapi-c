@@ -26,28 +26,40 @@ type SecContext struct {
 	initiatorName *GssName
 	acceptorName  *GssName
 
+	// this needs to be freed if not nil
+	delegCred *Credential
+
 	initOptions   *g.InitSecContextOptions
 	acceptOptions *g.AcceptSecContextOptions
 }
 
-func hasChannelBound() bool {
-	return C.has_channel_bound() == 1
+func newSecContext(isInitiator bool) SecContext {
+	return SecContext{
+		id:             C.GSS_C_NO_CONTEXT,
+		continueNeeded: true,
+		isInitiator:    isInitiator,
+		initOptions:    &g.InitSecContextOptions{},
+		acceptOptions:  &g.AcceptSecContextOptions{},
+	}
 }
 
-// InitSecContext() is just a constructor for the context -- it does not perform any GSSAPI calls
+// InitSecContext() is just a constructor for the context -- it does not perform any GSSAPI context establishment calls
 func (provider) InitSecContext(name g.GssName, opts ...g.InitSecContextOption) (g.SecContext, error) {
+	// The target name is required
+	if name == nil {
+		return nil, fmt.Errorf("InitSecContext: target name is required, %w", g.ErrBadName)
+	}
+
 	o := g.InitSecContextOptions{}
 	for _, opt := range opts {
 		opt(&o)
 	}
 
 	var nameImpl *GssName // impl not interface
-	if name != nil {
-		var ok bool
-		nameImpl, ok = name.(*GssName) // name must be *our* impl
-		if !ok {
-			return nil, fmt.Errorf("bad name type %T, %w", name, g.ErrBadName)
-		}
+	var ok bool
+	nameImpl, ok = name.(*GssName) // name must be *our* impl
+	if !ok {
+		return nil, fmt.Errorf("bad name type %T, %w", name, g.ErrBadName)
 	}
 
 	savedName, err := nameImpl.Duplicate()
@@ -55,13 +67,12 @@ func (provider) InitSecContext(name g.GssName, opts ...g.InitSecContextOption) (
 		return nil, fmt.Errorf("%w duplicating name: %w", g.ErrFailure, err)
 	}
 
-	return &SecContext{
-		isInitiator:    true,
-		continueNeeded: true,
-		initiatorName:  savedName.(*GssName),
-		mech:           o.Mech,
-		initOptions:    &o,
-	}, nil
+	ctx := newSecContext(true)
+	ctx.initiatorName = savedName.(*GssName)
+	ctx.mech = o.Mech
+	ctx.initOptions = &o
+
+	return &ctx, nil
 }
 
 func (provider) AcceptSecContext(opts ...g.AcceptSecContextOption) (g.SecContext, error) {
@@ -70,11 +81,10 @@ func (provider) AcceptSecContext(opts ...g.AcceptSecContextOption) (g.SecContext
 		opt(&o)
 	}
 
-	return &SecContext{
-		isInitiator:    false,
-		continueNeeded: true,
-		acceptOptions:  &o,
-	}, nil
+	ctx := newSecContext(false)
+	ctx.acceptOptions = &o
+
+	return &ctx, nil
 }
 
 // initSecContext() performs the GSSAPI context initialization using paramers supplied to InitSecContext()
@@ -98,7 +108,7 @@ func (c *SecContext) initSecContext() ([]byte, error) {
 		cGssCred = credImpl.id
 	}
 
-	var cGssName C.gss_name_t = c.initiatorName.name
+	var cGssTargetName C.gss_name_t = c.initiatorName.name
 
 	var cChBindings C.gss_channel_bindings_t = C.GSS_C_NO_CHANNEL_BINDINGS
 	pinnerCB := runtime.Pinner{}
@@ -108,11 +118,11 @@ func (c *SecContext) initSecContext() ([]byte, error) {
 	defer pinnerCB.Unpin()
 
 	var minor C.OM_uint32
-	var cGssCtxId C.gss_ctx_id_t = C.GSS_C_NO_CONTEXT
+	var cGssCtxID C.gss_ctx_id_t = C.GSS_C_NO_CONTEXT
 	var cOutToken C.gss_buffer_desc = C.gss_empty_buffer // cOutToken.value allocated by GSSAPI; released by *1
-	major := C.gss_init_sec_context(&minor, cGssCred, &cGssCtxId, cGssName, cMechOid, C.OM_uint32(c.initOptions.Flags), C.OM_uint32(c.initOptions.Lifetime.Seconds()), cChBindings, nil, nil, &cOutToken, nil, nil)
+	major := C.gss_init_sec_context(&minor, cGssCred, &cGssCtxID, cGssTargetName, cMechOid, C.OM_uint32(c.initOptions.Flags), C.OM_uint32(c.initOptions.Lifetime.Seconds()), cChBindings, nil, nil, &cOutToken, nil, nil)
 
-	if major != C.GSS_S_COMPLETE && major != C.GSS_S_CONTINUE_NEEDED {
+	if major != C.GSS_S_COMPLETE && (major&C.GSS_S_CONTINUE_NEEDED) == 0 {
 		return nil, makeMechStatus(major, minor, c.initOptions.Mech)
 	}
 
@@ -125,22 +135,22 @@ func (c *SecContext) initSecContext() ([]byte, error) {
 	if cOutToken != C.gss_empty_buffer {
 		outToken = C.GoBytes(cOutToken.value, C.int(cOutToken.length))
 	}
-	c.continueNeeded = major == C.GSS_S_CONTINUE_NEEDED
-	c.id = cGssCtxId
+	c.continueNeeded = (major & C.GSS_S_CONTINUE_NEEDED) > 0
+	c.id = cGssCtxID
 
 	return outToken, nil
 }
 
 func (c *SecContext) acceptSecContext(inputToken []byte) ([]byte, error) {
 	// get the C cred ID and name
-	var cGssCred C.gss_cred_id_t = C.GSS_C_NO_CREDENTIAL
+	var cGssAcceptorCred, cGssDelegCred C.gss_cred_id_t = C.GSS_C_NO_CREDENTIAL, C.GSS_C_NO_CREDENTIAL
 	if c.acceptOptions.Credential != nil {
 		credImpl, ok := c.acceptOptions.Credential.(*Credential) // must be *our* impl
 		if !ok {
 			return nil, fmt.Errorf("bad credential type %T, %w", credImpl, g.ErrDefectiveCredential)
 		}
 
-		cGssCred = credImpl.id
+		cGssAcceptorCred = credImpl.id
 	}
 
 	var cChBindings C.gss_channel_bindings_t = C.GSS_C_NO_CHANNEL_BINDINGS
@@ -151,13 +161,13 @@ func (c *SecContext) acceptSecContext(inputToken []byte) ([]byte, error) {
 	defer pinnerCb.Unpin()
 
 	var minor C.OM_uint32
-	var cSrcName C.gss_name_t = C.GSS_C_NO_NAME
-	var cGssCtxId C.gss_ctx_id_t = C.GSS_C_NO_CONTEXT
+	var cSrcAcceptorName C.gss_name_t = C.GSS_C_NO_NAME
+	var cGssCtxID C.gss_ctx_id_t = C.GSS_C_NO_CONTEXT
 	var cOutToken C.gss_buffer_desc = C.gss_empty_buffer // cOutToken.value allocated by GSSAPI; released by *1
 	cInputToken, pinner := bytesToCBuffer(inputToken)
 	defer pinner.Unpin()
 
-	major := C.gss_accept_sec_context(&minor, &cGssCtxId, cGssCred, &cInputToken, cChBindings, &cSrcName, nil, &cOutToken, nil, nil, nil)
+	major := C.gss_accept_sec_context(&minor, &cGssCtxID, cGssAcceptorCred, &cInputToken, cChBindings, &cSrcAcceptorName, nil, &cOutToken, nil, nil, &cGssDelegCred)
 	if major != C.GSS_S_COMPLETE && major != C.GSS_S_CONTINUE_NEEDED {
 		return nil, makeStatus(major, minor)
 	}
@@ -165,32 +175,36 @@ func (c *SecContext) acceptSecContext(inputToken []byte) ([]byte, error) {
 	// *1  release GSSAPI allocated buffer
 	defer C.gss_release_buffer(&minor, &cOutToken)
 
+	if cGssDelegCred != C.GSS_C_NO_CREDENTIAL {
+		c.delegCred = &Credential{cGssDelegCred, g.CredUsageInitiateOnly, false}
+	}
+
 	pinnerCb.Unpin()
 
 	var outToken []byte = nil
 	if cOutToken != C.gss_empty_buffer {
 		outToken = C.GoBytes(cOutToken.value, C.int(cOutToken.length))
 	}
-	c.continueNeeded = major == C.GSS_S_CONTINUE_NEEDED
-	c.id = cGssCtxId
-	c.acceptorName = &GssName{cSrcName}
+	c.continueNeeded = (major & C.GSS_S_CONTINUE_NEEDED) != 0
+	c.id = cGssCtxID
+	c.acceptorName = nameFromGssInternal(cSrcAcceptorName)
 	return outToken, nil
 }
 
 func (provider) ImportSecContext(token []byte) (g.SecContext, error) {
 	var minor C.OM_uint32
-	var cGssCtxId C.gss_ctx_id_t = C.GSS_C_NO_CONTEXT
+	var cGssCtxID C.gss_ctx_id_t = C.GSS_C_NO_CONTEXT
 
 	cToken, pinner := bytesToCBuffer(token)
 	defer pinner.Unpin()
 
-	major := C.gss_import_sec_context(&minor, &cToken, &cGssCtxId)
+	major := C.gss_import_sec_context(&minor, &cToken, &cGssCtxID)
 	if major != C.GSS_S_COMPLETE {
 		return nil, makeStatus(major, minor)
 	}
 
 	return &SecContext{
-		id: cGssCtxId,
+		id: cGssCtxID,
 	}, nil
 
 }
@@ -245,6 +259,9 @@ func (c *SecContext) ContinueNeeded() bool {
 }
 
 func (c *SecContext) Delete() ([]byte, error) {
+	if c == nil {
+		return nil, nil
+	}
 	if c.initiatorName != nil {
 		if err := c.initiatorName.Release(); err != nil {
 			return nil, err
@@ -257,6 +274,13 @@ func (c *SecContext) Delete() ([]byte, error) {
 			return nil, err
 		}
 		c.acceptorName = nil
+	}
+
+	if c.delegCred != nil {
+		if err := c.delegCred.Release(); err != nil {
+			return nil, err
+		}
+		c.delegCred = nil
 	}
 
 	if c.id == nil {
@@ -275,7 +299,7 @@ func (c *SecContext) Delete() ([]byte, error) {
 	return outToken, makeStatus(major, minor)
 }
 
-// no idea how to test this!
+// ProcessToken is used to process error tokens from the peero.  No idea how to test this!
 func (c *SecContext) ProcessToken(token []byte) error {
 	var minor C.OM_uint32
 	cInputToken, pinner := bytesToCBuffer(token)
@@ -342,12 +366,17 @@ func (c *SecContext) Inquire() (*g.SecContextInfo, error) {
 		_ = c.acceptorName.Release()
 	}
 
-	c.initiatorName = &GssName{cSrcName}
-	c.acceptorName = &GssName{cTargName}
+	c.initiatorName = nameFromGssInternal(cSrcName)
+	c.acceptorName = nameFromGssInternal(cTargName)
 
-	mech, err := g.MechFromOid(oidFromGssOid(cMechOid))
+	oid := oidFromGssOid(cMechOid)
+	mech, err := g.MechFromOid(oid)
 	if err != nil {
-		return nil, err
+		if cMechOid == C.GSS_C_NO_OID && isHeimdalMac() {
+			mech = g.GSS_MECH_KRB5
+		} else {
+			return nil, err
+		}
 	}
 
 	// treat protection and transferrable flags separately -- they are not

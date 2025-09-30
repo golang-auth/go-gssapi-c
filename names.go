@@ -16,10 +16,12 @@ import (
 
 type GssName struct {
 	name C.gss_name_t
+
+	isFromNoName bool
 }
 
-func nameFromGssInternal(name C.gss_name_t) GssName {
-	return GssName{name}
+func nameFromGssInternal(name C.gss_name_t) *GssName {
+	return &GssName{name, false}
 }
 
 func (provider) ImportName(name string, nameType g.GssNameType) (g.GssName, error) {
@@ -37,7 +39,8 @@ func (provider) ImportName(name string, nameType g.GssNameType) (g.GssName, erro
 	}
 
 	return &GssName{
-		name: cGssName,
+		name:         cGssName,
+		isFromNoName: false,
 	}, nil
 }
 
@@ -87,6 +90,10 @@ func (n *GssName) Compare(other g.GssName) (bool, error) {
 		return false, fmt.Errorf("can't compare %T with %T: %w", n, other, g.ErrBadName)
 	}
 
+	if n.isFromNoName && isHeimdalAfter7() {
+		return false, makeCustomStatus(C.GSS_S_UNAVAILABLE, fmt.Errorf("gss_compare_name on this name is not stable on this version of Heimdal"))
+	}
+
 	var minor C.OM_uint32
 	var cEqual C.int
 	major := C.gss_compare_name(&minor, n.name, otherName.name, &cEqual)
@@ -98,6 +105,10 @@ func (n *GssName) Compare(other g.GssName) (bool, error) {
 }
 
 func (n *GssName) Display() (string, g.GssNameType, error) {
+	if n.isFromNoName && isHeimdalAfter7() {
+		return "", g.GSS_NO_OID, makeCustomStatus(C.GSS_S_UNAVAILABLE, fmt.Errorf("gss_display_name on this name is not stable on this version of Heimdal"))
+	}
+
 	var minor C.OM_uint32
 	var cOutputBuf C.gss_buffer_desc = C.gss_empty_buffer // outputBuf.value allocated by GSSAPI; released by *1
 	var cOutType C.gss_OID = C.GSS_C_NO_OID               // not to be freed (static GSSAPI data)
@@ -121,7 +132,7 @@ func (n *GssName) Display() (string, g.GssNameType, error) {
 }
 
 func (n *GssName) Release() error {
-	if n.name == nil {
+	if n.name == C.GSS_C_NO_NAME {
 		return nil
 	}
 	var minor C.OM_uint32
@@ -161,6 +172,10 @@ func (n *GssName) InquireMechs() ([]g.GssMech, error) {
 }
 
 func (n *GssName) Canonicalize(mech g.GssMech) (g.GssName, error) {
+	if n.isFromNoName && isHeimdalAfter7() {
+		return nil, makeCustomStatus(C.GSS_S_UNAVAILABLE, fmt.Errorf("gss_display_name on this name is not stable on this version of Heimdal"))
+	}
+
 	cMechOid := oid2Coid(mech.Oid())
 
 	var minor C.OM_uint32
@@ -176,6 +191,10 @@ func (n *GssName) Canonicalize(mech g.GssMech) (g.GssName, error) {
 }
 
 func (n *GssName) Export() ([]byte, error) {
+	if n.isFromNoName && isHeimdalAfter7() {
+		return nil, makeCustomStatus(C.GSS_S_UNAVAILABLE, fmt.Errorf("gss_display_name on this name is not stable on this version of Heimdal"))
+	}
+
 	var minor C.OM_uint32
 	var cOutputBuf C.gss_buffer_desc = C.gss_empty_buffer // cOutputBuf.value allocated by GSSAPI; released by *1
 	major := C.gss_export_name(&minor, n.name, &cOutputBuf)
@@ -192,6 +211,10 @@ func (n *GssName) Export() ([]byte, error) {
 }
 
 func (n *GssName) Duplicate() (g.GssName, error) {
+	if n.isFromNoName && isHeimdalAfter7() {
+		return nil, makeCustomStatus(C.GSS_S_UNAVAILABLE, fmt.Errorf("gss_display_name on this name is not stable on this version of Heimdal"))
+	}
+
 	var minor C.OM_uint32
 	var cOutName C.gss_name_t = C.GSS_C_NO_NAME
 	major := C.gss_duplicate_name(&minor, n.name, &cOutName)
@@ -202,64 +225,4 @@ func (n *GssName) Duplicate() (g.GssName, error) {
 	return &GssName{
 		name: cOutName,
 	}, nil
-}
-
-// GssNameExtLocalname extension
-func (n *GssName) Localname(mech g.GssMech) (string, error) {
-	cMechOid := oid2Coid(mech.Oid())
-
-	var minor C.OM_uint32
-	var cOutputBuf C.gss_buffer_desc = C.gss_empty_buffer // cOutputBuf.value allocated by GSSAPI; released by *1
-	major := C.gss_localname(&minor, n.name, cMechOid, &cOutputBuf)
-	if major != C.GSS_S_COMPLETE {
-		return "", makeStatus(major, minor)
-	}
-
-	// *1  release GSSAPI allocated buffer
-	defer C.gss_release_buffer(&minor, &cOutputBuf)
-
-	localname := C.GoStringN((*C.char)(cOutputBuf.value), C.int(cOutputBuf.length))
-
-	return localname, nil
-}
-
-// GssNameExtRFC6680 extension
-func (n *GssName) Inquire() (g.InquireNameInfo, error) {
-	ret := g.InquireNameInfo{
-		Mech: g.GSS_NO_OID,
-	}
-
-	var minor C.OM_uint32
-	var cNameIsMN C.int
-	var cMech C.gss_OID = C.GSS_C_NO_OID
-	var cAttrs C.gss_buffer_set_t // Freed by *1
-	major := C.gss_inquire_name(&minor, n.name, &cNameIsMN, &cMech, &cAttrs)
-	if major != 0 {
-		return ret, makeStatus(major, minor)
-	}
-
-	// *1 Free buffers
-	defer C.gss_release_buffer_set(&minor, &cAttrs)
-
-	ret.IsMechName = cNameIsMN == 1
-	if ret.IsMechName {
-		oid := oidFromGssOid(cMech)
-		nt, err := g.MechFromOid(oid)
-		if err != nil {
-			return ret, err
-		}
-		ret.Mech = nt
-	}
-
-	attrs := [][]byte{}
-	if cAttrs != C.GSS_C_NO_BUFFER_SET {
-		attrs = extractBufferSet(cAttrs)
-	}
-
-	ret.Attributes = make([]string, len(attrs))
-	for i, v := range attrs {
-		ret.Attributes[i] = string(v)
-	}
-
-	return ret, nil
 }
