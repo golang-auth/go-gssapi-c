@@ -40,6 +40,59 @@ jobs:
       with:
         version: latest
 
+  freebsd-tests:
+    name: FreeBSD basic tests
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version: ['1.24.x', '1.25.x' ]
+        krb5-version: ["base", "mit", "heimdal"]
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Test using FreeBSD VM
+      uses: vmactions/freebsd-vm@v1
+      with:
+        prepare: |
+          PKGS="pkgconf"
+          if [ "${{ matrix.go-version }}" = "1.24.x" ]; then
+            PKGS="${PKGS} go124"
+          else
+            PKGS="${PKGS} go125"
+          fi
+
+          if [ "${{ matrix.krb5-version }}" = "mit" ]; then
+            PKGS="${PKGS} krb5"
+          fi
+
+          if [ "${{ matrix.krb5-version }}" = "heimdal" ]; then
+            PKGS="${PKGS} heimdal"
+          fi
+
+          pkg install -y ${PKGS}
+
+        run: |
+          if [ "${{ matrix.go-version }}" = "1.24.x" ]; then
+            export PATH=/usr/local/go124/bin:$PATH
+          else
+            export PATH=/usr/local/go125/bin:$PATH
+          fi
+
+          if [ "${{ matrix.krb5-version }}" != "base" ]; then
+            TAGS="-tags usepkgconfig"
+          fi
+
+          echo Using PATH $PATH
+          echo Using go $(go version)
+          echo Kerberos package config:
+          pkg-config -libs krb5-gssapi
+          pkg-config -cflags krb5-gssapi
+          go test -v ${TAGS} ./...
+
+
   basic-tests:
     name: Basic tests
     strategy:
@@ -47,7 +100,10 @@ jobs:
       matrix:
         os: ['ubuntu-latest', 'macos-latest']
         go-version: ['1.24.x', '1.25.x' ]
-        krb5-version: ["base", "heimdal"]
+        krb5-version: ["base", "mit", "heimdal"]
+        exclude:
+          - os: ubuntu-latest
+            krb5-version: "base"
 
     runs-on: ${{ matrix.os }}
 
@@ -66,9 +122,9 @@ jobs:
           if [ -e /etc/os-release ]; then cat /etc/os-release; fi
 
     - name: Install Ubuntu MIT packages
-      if: ${{ runner.os == 'Linux' && matrix.krb5-version == 'base' }}
+      if: ${{ runner.os == 'Linux' && matrix.krb5-version == 'mit' }}
       run: |
-          sudo apt-get -y install krb5-user libkrb5-dev pkg-config
+          sudo apt-get install -y krb5-user libkrb5-dev pkg-config
 
     - name: Install Ubuntu Heimdal packages
       if: ${{ runner.os == 'Linux' && matrix.krb5-version == 'heimdal' }}
