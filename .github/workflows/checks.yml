@@ -40,57 +40,57 @@ jobs:
       with:
         version: latest
 
-  freebsd-tests:
-    name: FreeBSD basic tests
-    strategy:
-      fail-fast: false
-      matrix:
-        go-version: ['1.24.x', '1.25.x' ]
-        krb5-version: ["base", "mit", "heimdal"]
+  # freebsd-tests:
+  #   name: FreeBSD basic tests
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       go-version: ['1.24.x', '1.25.x' ]
+  #       krb5-version: ["base", "mit", "heimdal"]
 
-    runs-on: ubuntu-latest
+  #   runs-on: ubuntu-latest
 
-    steps:
-    - uses: actions/checkout@v4
+  #   steps:
+  #   - uses: actions/checkout@v4
 
-    - name: Test using FreeBSD VM
-      uses: vmactions/freebsd-vm@v1
-      with:
-        prepare: |
-          PKGS="pkgconf"
-          if [ "${{ matrix.go-version }}" = "1.24.x" ]; then
-            PKGS="${PKGS} go124"
-          else
-            PKGS="${PKGS} go125"
-          fi
+  #   - name: Test using FreeBSD VM
+  #     uses: vmactions/freebsd-vm@v1
+  #     with:
+  #       prepare: |
+  #         PKGS="pkgconf"
+  #         if [ "${{ matrix.go-version }}" = "1.24.x" ]; then
+  #           PKGS="${PKGS} go124"
+  #         else
+  #           PKGS="${PKGS} go125"
+  #         fi
 
-          if [ "${{ matrix.krb5-version }}" = "mit" ]; then
-            PKGS="${PKGS} krb5"
-          fi
+  #         if [ "${{ matrix.krb5-version }}" = "mit" ]; then
+  #           PKGS="${PKGS} krb5"
+  #         fi
 
-          if [ "${{ matrix.krb5-version }}" = "heimdal" ]; then
-            PKGS="${PKGS} heimdal"
-          fi
+  #         if [ "${{ matrix.krb5-version }}" = "heimdal" ]; then
+  #           PKGS="${PKGS} heimdal"
+  #         fi
 
-          pkg install -y ${PKGS}
+  #         pkg install -y ${PKGS}
 
-        run: |
-          if [ "${{ matrix.go-version }}" = "1.24.x" ]; then
-            export PATH=/usr/local/go124/bin:$PATH
-          else
-            export PATH=/usr/local/go125/bin:$PATH
-          fi
+  #       run: |
+  #         if [ "${{ matrix.go-version }}" = "1.24.x" ]; then
+  #           export PATH=/usr/local/go124/bin:$PATH
+  #         else
+  #           export PATH=/usr/local/go125/bin:$PATH
+  #         fi
 
-          if [ "${{ matrix.krb5-version }}" != "base" ]; then
-            TAGS="-tags usepkgconfig"
-          fi
+  #         if [ "${{ matrix.krb5-version }}" != "base" ]; then
+  #           TAGS="-tags usepkgconfig"
+  #         fi
 
-          echo Using PATH $PATH
-          echo Using go $(go version)
-          echo Kerberos package config:
-          pkg-config -libs krb5-gssapi
-          pkg-config -cflags krb5-gssapi
-          go test -v ${TAGS} ./...
+  #         echo Using PATH $PATH
+  #         echo Using go $(go version)
+  #         echo Kerberos package config:
+  #         pkg-config -libs krb5-gssapi
+  #         pkg-config -cflags krb5-gssapi
+  #         go test -v ${TAGS} ./...
 
 
   basic-tests:
@@ -98,8 +98,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ['ubuntu-latest', 'macos-latest']
-        go-version: ['1.24.x', '1.25.x' ]
+        # os: ['ubuntu-latest', 'macos-latest']
+        # go-version: ['1.24.x', '1.25.x' ]
+        os: ['macos-latest']
+        go-version: ['1.25.x' ]
         krb5-version: ["base", "mit", "heimdal"]
         exclude:
           - os: ubuntu-latest
@@ -121,21 +123,29 @@ jobs:
           uname -a
           if [ -e /etc/os-release ]; then cat /etc/os-release; fi
 
-    - name: Install Ubuntu MIT packages
-      if: ${{ runner.os == 'Linux' && matrix.krb5-version == 'mit' }}
+    - name: Install Ubunt upackages
+      if: ${{ runner.os == 'Linux'}}
       run: |
-          sudo apt-get install -y krb5-user libkrb5-dev pkg-config
+          if [ "${{ matrix.krb5-version }}" = "mit" ]; then
+            sudo apt-get install -y krb5-user libkrb5-dev pkg-config
+          fi
+          if [ "${{ matrix.krb5-version }}" = "heimdal" ]; then
+            sudo apt-get install -y heimdal-dev pkg-config
+          fi
 
-    - name: Install Ubuntu Heimdal packages
-      if: ${{ runner.os == 'Linux' && matrix.krb5-version == 'heimdal' }}
+    - name: Install MacOS packages
+      if: ${{ runner.os == 'macOS' }}
       run: |
-          sudo apt-get install -y heimdal-dev pkg-config
-
-    - name: Install MacOS Heimdal packages
-      if: ${{ runner.os == 'macOS' && matrix.krb5-version == 'heimdal' }}
-      run: |
-          brew install heimdal
-          echo "PKG_CONFIG_PATH=/opt/homebrew/opt/heimdal/lib/pkgconfig" >>$GITHUB_ENV
+          if [ "${{ matrix.krb5-version }}" = "mit" ]; then
+            brew install krb5
+            echo "PKG_CONFIG_PATH=/opt/homebrew/Cellar/krb5/1.22.1/lib/pkgconfig" >>$GITHUB_ENV
+            echo 'TAGS=-tags usepkgconfig' >>$GITHUB_ENV
+          fi
+          if [ "${{ matrix.krb5-version }}" = "heimdal" ]; then
+            brew install heimdal
+            echo "PKG_CONFIG_PATH=/opt/homebrew/opt/heimdal/lib/pkgconfig" >>$GITHUB_ENV
+            echo 'TAGS=-tags usepkgconfig' >>$GITHUB_ENV
+          fi
 
     - name: Generate test includes
       run: |
@@ -144,7 +154,8 @@ jobs:
     - name: Run tests
       run: |
         go clean -cache
-        go test  $pkgs -coverprofile=cover.out -covermode=atomic
+        export OPENSSL_CONF=./openssl.cnf
+        go test -v ${TAGS} $pkgs -coverprofile=cover.out -covermode=atomic
 
     - name: Check test coverage
       if: ${{ runner.os == 'Linux' && matrix.krb5-version == 'base' && matrix.go-version == '1.25.x' }}

@@ -499,7 +499,7 @@ func TestChannelBindings(t *testing.T) {
 			if tt.expectError != nil {
 				assert.ErrorIs(err, tt.expectError)
 			} else {
-				assert.NoError(err)
+				assert.NoErrorFatal(err)
 				assert.False(secCtxAcceptor.ContinueNeeded())
 
 				if hasChBound {
