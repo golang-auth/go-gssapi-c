@@ -42,6 +42,7 @@ jobs:
 
   freebsd-tests:
     name: FreeBSD basic tests
+    timeout-minutes: 30 
     strategy:
       fail-fast: false
       matrix:
@@ -90,13 +91,18 @@ jobs:
           echo Kerberos package config:
           pkg-config -libs krb5-gssapi
           pkg-config -cflags krb5-gssapi
+
+          export KRB5CCNAME=FILE:$(pwd)/testdata/test.cc
+          klist
           go test -v ${TAGS} ./...
 
 
   basic-tests:
     name: Basic tests
+    timeout-minutes: 30 
     strategy:
       fail-fast: false
+      max-parallel: 4
       matrix:
         os: ['ubuntu-latest', 'macos-latest']
         go-version: ['1.24.x', '1.25.x' ]
@@ -121,7 +127,7 @@ jobs:
           uname -a
           if [ -e /etc/os-release ]; then cat /etc/os-release; fi
 
-    - name: Install Ubunt upackages
+    - name: Install Ubuntu upackages
       if: ${{ runner.os == 'Linux'}}
       run: |
           if [ "${{ matrix.krb5-version }}" = "mit" ]; then
@@ -136,7 +142,8 @@ jobs:
       run: |
           if [ "${{ matrix.krb5-version }}" = "mit" ]; then
             brew install krb5
-            echo "PKG_CONFIG_PATH=/opt/homebrew/Cellar/krb5/1.22.1/lib/pkgconfig" >>$GITHUB_ENV
+            #echo "PKG_CONFIG_PATH=/opt/homebrew/Cellar/krb5/1.22.1/lib/pkgconfig" >>$GITHUB_ENV
+            echo "PKG_CONFIG_PATH=/opt/homebrew/opt/krb5/lib/pkgconfig" >>$GITHUB_ENV
             echo 'TAGS=-tags usepkgconfig' >>$GITHUB_ENV
           fi
           if [ "${{ matrix.krb5-version }}" = "heimdal" ]; then
@@ -153,7 +160,9 @@ jobs:
       run: |
         go clean -cache
         export OPENSSL_CONF=./openssl.cnf
-        go test -v ${TAGS} $pkgs -coverprofile=cover.out -covermode=atomic
+        # export KRB5CCNAME=FILE:$(pwd)/testdata/test.cc
+        # klist
+        go test  ${TAGS} $pkgs -count 100 -coverprofile=cover.out -covermode=atomic
 
     - name: Check test coverage
       if: ${{ runner.os == 'Linux' && matrix.krb5-version == 'base' && matrix.go-version == '1.25.x' }}

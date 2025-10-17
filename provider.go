@@ -86,6 +86,6 @@ func (p *provider) HasExtension(e g.GssapiExtension) bool {
 	case g.HasExtKrb5Identity:
 		return (hasSymbol("krb5_gss_register_acceptor_identity") ||
 			hasSymbol("gsskrb5_register_acceptor_identity")) &&
-			hasSymbol("gss_krb5_ccache_name")
+			hasSymbol("krb5_cc_set_default_name")
 	}
 }

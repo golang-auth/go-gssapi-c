@@ -62,9 +62,11 @@ func releaseName(name g.GssName) {
 }
 
 type testAssets struct {
+	ktName     string
 	ktfileRack string
 	ktfileRuin string
 	ktfileAll  string
+	ccName     string
 	ccfile     string
 	cfgfile1   string
 	cfgfile2   string
@@ -80,15 +82,17 @@ func mkTestAssets() *testAssets {
 		lib: p,
 	}
 
-	ktName1, krName2, ktNameAll, ccName, err := writeKrbCreds()
+	ktName, ktName1, krName2, ktNameAll, ccName, cc1, err := writeKrbCreds()
 	if err != nil {
 		panic(err)
 	}
 
+	ta.ktName = ktName
 	ta.ktfileRack = ktName1
 	ta.ktfileRuin = krName2
 	ta.ktfileAll = ktNameAll
-	ta.ccfile = ccName
+	ta.ccfile = cc1
+	ta.ccName = ccName
 
 	cfName1, cfName2, err := writeKrb5Confs()
 	if err != nil {
@@ -98,16 +102,21 @@ func mkTestAssets() *testAssets {
 	ta.cfgfile1 = cfName1
 	ta.cfgfile2 = cfName2
 
+	os.Setenv("KRB5CCNAME", "FILE:"+ta.ccName)
+	os.Setenv("KRB5_KTNAME", "FILE:"+ta.ktName)
+
 	return ta
 }
 
 func (ta *testAssets) Free() {
+	_ = os.Remove(ta.ktName)
 	_ = os.Remove(ta.cfgfile1)
 	_ = os.Remove(ta.cfgfile2)
 	_ = os.Remove(ta.ktfileRack)
 	_ = os.Remove(ta.ktfileRuin)
 	_ = os.Remove(ta.ktfileAll)
 	_ = os.Remove(ta.ccfile)
+	_ = os.Remove(ta.ccName)
 }
 
 type testAssetType int
@@ -124,31 +133,51 @@ const (
 	testNoCfg
 )
 
-func (ta *testAssets) useAsset(t *testing.T, at testAssetType) {
-	if !ta.lib.HasExtension(g.HasExtKrb5Identity) {
-		if t != nil {
-			t.Skip("skipping test, provider does not support krb5 identity")
-		}
-		return
+func CopyFile(src, dst string) error {
+	// Open the source file for reading
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("failed to open source file: %w", err)
+	}
+	defer sourceFile.Close() // Ensure the source file is closed
+
+	// Create the destination file for writing, truncating if it already exists
+	destinationFile, err := os.Create(dst)
+	if err != nil {
+		return fmt.Errorf("failed to create destination file: %w", err)
+	}
+	defer destinationFile.Close() // Ensure the destination file is closed
+
+	// Copy the contents from the source to the destination
+	_, err = io.Copy(destinationFile, sourceFile)
+	if err != nil {
+		return fmt.Errorf("failed to copy file contents: %w", err)
 	}
 
-	p := ta.lib.(g.ProviderExtKrb5Identity)
+	err = os.Chmod(dst, 0600)
+	if err != nil {
+		return fmt.Errorf("failed to set destination file permissions: %w", err)
+	}
 
+	return nil
+}
+
+func (ta *testAssets) useAsset(t *testing.T, at testAssetType) {
 	var err error
 	switch {
 	case at&testKeytabAll > 0:
-		err = p.RegisterAcceptorIdentity("FILE:" + ta.ktfileAll)
+		err = CopyFile(ta.ktfileAll, ta.ktName)
 	case at&testKeytabRack > 0:
-		err = p.RegisterAcceptorIdentity("FILE:" + ta.ktfileRack)
+		err = CopyFile(ta.ktfileRack, ta.ktName)
 	case at&testKeytabRuin > 0:
-		err = p.RegisterAcceptorIdentity("FILE:" + ta.ktfileRuin)
+		err = CopyFile(ta.ktfileRuin, ta.ktName)
 	case at&testNoKeytab > 0:
-		err = p.RegisterAcceptorIdentity("/no/such/file")
+		err = os.Remove(ta.ktName)
 	}
 
 	if err != nil {
 		if t != nil {
-			t.Logf("RegisterAcceptorIdentity failed: %v", err)
+			t.Logf("Link keytab failed: %v", err)
 		} else {
 			panic(err)
 		}
@@ -156,14 +185,14 @@ func (ta *testAssets) useAsset(t *testing.T, at testAssetType) {
 
 	switch {
 	case at&testCredCache > 0:
-		err = p.SetCCacheName("FILE:" + ta.ccfile)
+		err = CopyFile(ta.ccfile, ta.ccName)
 	case at&testNoCredCache > 0:
-		err = p.SetCCacheName("FILE:/no/such/file")
+		err = os.Remove(ta.ccName)
 	}
 
 	if err != nil {
 		if t != nil {
-			t.Logf("RegisterAcceptorIdentity failed: %v", err)
+			t.Logf("CCache link failed: %v", err)
 		} else {
 			panic(err)
 		}
@@ -210,7 +239,7 @@ func writeTmp(r io.Reader) (string, error) {
 	return fn, err
 }
 
-func writeKrbCreds() (kt1, kt2, ktAll, cc string, err error) {
+func writeKrbCreds() (ktName, kt1, kt2, ktAll, ccName, cc1 string, err error) {
 	kt1, err = writeTmpBase64(ktdata1)
 	if err != nil {
 		return
@@ -224,7 +253,28 @@ func writeKrbCreds() (kt1, kt2, ktAll, cc string, err error) {
 		return
 	}
 
-	cc, err = writeTmpBase64(ccdata)
+	cc1, err = writeTmpBase64(ccdata)
+	if err != nil {
+		return
+	}
+
+	fh, err := os.CreateTemp("", "test")
+	if err != nil {
+		return
+	}
+	ktName = fh.Name()
+	fh.Close() //nolint:errcheck
+	if err = os.Remove(ktName); err != nil {
+		return
+	}
+
+	fh, err = os.CreateTemp("", "test")
+	if err != nil {
+		return
+	}
+	ccName = fh.Name()
+	fh.Close() //nolint:errcheck
+	err = os.Remove(ccName)
 
 	return
 }
