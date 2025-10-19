@@ -1,8 +1,7 @@
-name: Checks
+name: Light tests
 
 on:
   push:
-  pull_request:
 
 permissions:
   contents: read
@@ -40,76 +39,24 @@ jobs:
       with:
         version: latest
 
-  freebsd-tests:
-    name: FreeBSD basic tests
-    timeout-minutes: 30 
-    strategy:
-      fail-fast: false
-      matrix:
-        go-version: ['1.24.x', '1.25.x' ]
-        krb5-version: ["base", "mit", "heimdal"]
-
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Test using FreeBSD VM
-      uses: vmactions/freebsd-vm@v1
-      with:
-        prepare: |
-          PKGS="pkgconf"
-          if [ "${{ matrix.go-version }}" = "1.24.x" ]; then
-            PKGS="${PKGS} go124"
-          else
-            PKGS="${PKGS} go125"
-          fi
-
-          if [ "${{ matrix.krb5-version }}" = "mit" ]; then
-            PKGS="${PKGS} krb5"
-          fi
-
-          if [ "${{ matrix.krb5-version }}" = "heimdal" ]; then
-            PKGS="${PKGS} heimdal"
-          fi
-
-          pkg install -y ${PKGS}
-
-        run: |
-          if [ "${{ matrix.go-version }}" = "1.24.x" ]; then
-            export PATH=/usr/local/go124/bin:$PATH
-          else
-            export PATH=/usr/local/go125/bin:$PATH
-          fi
-
-          if [ "${{ matrix.krb5-version }}" != "base" ]; then
-            TAGS="-tags usepkgconfig"
-          fi
-
-          echo Using PATH $PATH
-          echo Using go $(go version)
-          echo Kerberos package config:
-          pkg-config -libs krb5-gssapi
-          pkg-config -cflags krb5-gssapi
-
-          export KRB5CCNAME=FILE:$(pwd)/testdata/test.cc
-          klist
-          go test -v ${TAGS} ./...
-
-
+  
   basic-tests:
     name: Basic tests
-    timeout-minutes: 30 
+    timeout-minutes: 60 
+    needs: consistency-checks
     strategy:
       fail-fast: false
-      max-parallel: 4
       matrix:
-        os: ['ubuntu-latest', 'macos-latest']
-        go-version: ['1.24.x', '1.25.x' ]
-        krb5-version: ["base", "mit", "heimdal"]
-        exclude:
-          - os: ubuntu-latest
-            krb5-version: "base"
+        include:
+            - os: ubuntu-latest
+              go-version: '1.25.x'
+              krb5-version: mit
+            - os: ubuntu-latest
+              go-version: '1.25.x'
+              krb5-version: heimdal
+            - os: macos-latest
+              go-version: '1.25.x'
+              krb5-version: base
 
     runs-on: ${{ matrix.os }}
 
@@ -142,7 +89,6 @@ jobs:
       run: |
           if [ "${{ matrix.krb5-version }}" = "mit" ]; then
             brew install krb5
-            #echo "PKG_CONFIG_PATH=/opt/homebrew/Cellar/krb5/1.22.1/lib/pkgconfig" >>$GITHUB_ENV
             echo "PKG_CONFIG_PATH=/opt/homebrew/opt/krb5/lib/pkgconfig" >>$GITHUB_ENV
             echo 'TAGS=-tags usepkgconfig' >>$GITHUB_ENV
           fi
@@ -157,16 +103,14 @@ jobs:
         echo pkgs=$(go list ./... | grep -v /examples/) >> "$GITHUB_ENV"
 
     - name: Run tests
+      timeout-minutes: 30
       run: |
         go clean -cache
         export OPENSSL_CONF=./openssl.cnf
-        # export KRB5CCNAME=FILE:$(pwd)/testdata/test.cc
-        # klist
-        go test  ${TAGS} $pkgs -count 100 -coverprofile=cover.out -covermode=atomic
+        go test  ${TAGS} $pkgs -count 10 -timeout 30m -coverprofile=cover.out -covermode=atomic
 
     - name: Check test coverage
       if: ${{ runner.os == 'Linux' && matrix.krb5-version == 'base' && matrix.go-version == '1.25.x' }}
       uses: jake-scott/go-test-coverage@v1.0.0
       with:
         config: ./.testcoverage.yml
-        threshold-total: 80

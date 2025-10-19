@@ -102,8 +102,8 @@ func mkTestAssets() *testAssets {
 	ta.cfgfile1 = cfName1
 	ta.cfgfile2 = cfName2
 
-	os.Setenv("KRB5CCNAME", "FILE:"+ta.ccName)
-	os.Setenv("KRB5_KTNAME", "FILE:"+ta.ktName)
+	_ = os.Setenv("KRB5CCNAME", "FILE:"+ta.ccName)
+	_ = os.Setenv("KRB5_KTNAME", "FILE:"+ta.ktName)
 
 	return ta
 }
@@ -139,14 +139,14 @@ func CopyFile(src, dst string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open source file: %w", err)
 	}
-	defer sourceFile.Close() // Ensure the source file is closed
+	defer sourceFile.Close() //nolint:errcheck
 
 	// Create the destination file for writing, truncating if it already exists
 	destinationFile, err := os.Create(dst)
 	if err != nil {
 		return fmt.Errorf("failed to create destination file: %w", err)
 	}
-	defer destinationFile.Close() // Ensure the destination file is closed
+	defer destinationFile.Close() //nolint:errcheck
 
 	// Copy the contents from the source to the destination
 	_, err = io.Copy(destinationFile, sourceFile)

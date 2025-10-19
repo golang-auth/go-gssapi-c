@@ -1,0 +1,201 @@
+name: Full tests
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: '0 0 1 * *'
+
+permissions:
+  contents: read
+
+jobs:
+
+  consistency-checks:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go 1.25
+      uses: actions/setup-go@v5
+      with:
+          go-version: 1.25.x
+
+    - name: OS details
+      run: |
+          uname -a
+          if [ -e /etc/os-release ]; then cat /etc/os-release; fi
+
+    - name: Install packages
+      if: ${{ runner.os == 'Linux' }}
+      run: |
+          sudo apt-get -y install krb5-user libkrb5-dev
+
+    - name: Code format check
+      run: ./.github/scripts/gofmt
+
+    - name: Static check
+      uses: dominikh/staticcheck-action@v1
+
+    - name: golangci-lint
+      uses: golangci/golangci-lint-action@v8
+      with:
+        version: latest
+
+  openbsd-tests:
+    name: OpenBSD basic tests
+    timeout-minutes: 30
+    needs: consistency-checks
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Test using OpenBSD VM
+      timeout-minutes: 30
+      uses: vmactions/openbsd-vm@v1
+      with:
+        prepare: |
+          pkg_add heimdal go
+
+        run: |
+          echo Using PATH $PATH
+          echo Using go $(go version)
+
+          export LD_LIBRARY_PATH=/usr/local/heimdal/lib
+          go test
+
+
+  freebsd-tests:
+    name: FreeBSD basic tests
+    timeout-minutes: 60
+    needs: consistency-checks
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version: ['1.24.x', '1.25.x' ]
+        krb5-version: ["base", "mit", "heimdal"]
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Test using FreeBSD VM
+      timeout-minutes: 30
+      uses: vmactions/freebsd-vm@v1
+      with:
+        prepare: |
+          PKGS="pkgconf"
+          if [ "${{ matrix.go-version }}" = "1.24.x" ]; then
+            PKGS="${PKGS} go124"
+          else
+            PKGS="${PKGS} go125"
+          fi
+
+          if [ "${{ matrix.krb5-version }}" = "mit" ]; then
+            PKGS="${PKGS} krb5"
+          fi
+
+          if [ "${{ matrix.krb5-version }}" = "heimdal" ]; then
+            PKGS="${PKGS} heimdal"
+          fi
+
+          pkg install -y ${PKGS}
+
+        run: |
+          if [ "${{ matrix.go-version }}" = "1.24.x" ]; then
+            export PATH=/usr/local/go124/bin:$PATH
+          else
+            export PATH=/usr/local/go125/bin:$PATH
+          fi
+
+          if [ "${{ matrix.krb5-version }}" != "base" ]; then
+            TAGS="-tags usepkgconfig"
+          fi
+
+          echo Using PATH $PATH
+          echo Using go $(go version)
+          echo Kerberos package config:
+          pkg-config -libs krb5-gssapi
+          pkg-config -cflags krb5-gssapi
+
+          go test ${TAGS}
+
+
+  basic-tests:
+    name: Basic tests
+    timeout-minutes: 60 
+    needs: consistency-checks
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        os: ['ubuntu-latest', 'macos-latest']
+        go-version: ['1.24.x', '1.25.x' ]
+        krb5-version: ["base", "mit", "heimdal"]
+        exclude:
+          - os: ubuntu-latest
+            krb5-version: "base"
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go ${{ matrix.go-version }}
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    - name: OS details
+      run: |
+          echo This is Github OS ${{ runner.os }}
+          uname -a
+          if [ -e /etc/os-release ]; then cat /etc/os-release; fi
+
+    - name: Install Ubuntu upackages
+      if: ${{ runner.os == 'Linux'}}
+      run: |
+          if [ "${{ matrix.krb5-version }}" = "mit" ]; then
+            sudo apt-get install -y krb5-user libkrb5-dev pkg-config
+          fi
+          if [ "${{ matrix.krb5-version }}" = "heimdal" ]; then
+            sudo apt-get install -y heimdal-dev pkg-config
+          fi
+
+    - name: Install MacOS packages
+      if: ${{ runner.os == 'macOS' }}
+      run: |
+          if [ "${{ matrix.krb5-version }}" = "mit" ]; then
+            brew install krb5
+            echo "PKG_CONFIG_PATH=/opt/homebrew/opt/krb5/lib/pkgconfig" >>$GITHUB_ENV
+            echo 'TAGS=-tags usepkgconfig' >>$GITHUB_ENV
+          fi
+          if [ "${{ matrix.krb5-version }}" = "heimdal" ]; then
+            brew install heimdal
+            echo "PKG_CONFIG_PATH=/opt/homebrew/opt/heimdal/lib/pkgconfig" >>$GITHUB_ENV
+            echo 'TAGS=-tags usepkgconfig' >>$GITHUB_ENV
+          fi
+
+    - name: Generate test includes
+      run: |
+        echo pkgs=$(go list ./... | grep -v /examples/) >> "$GITHUB_ENV"
+
+    - name: Run tests
+      timeout-minutes: 30
+      run: |
+        go clean -cache
+        export OPENSSL_CONF=./openssl.cnf
+        go test  ${TAGS} $pkgs -count 10 -timeout 30m -coverprofile=cover.out -covermode=atomic
+
+    - name: Check test coverage
+      if: ${{ runner.os == 'Linux' && matrix.krb5-version == 'base' && matrix.go-version == '1.25.x' }}
+      uses: jake-scott/go-test-coverage@v1.0.0
+      with:
+        config: ./.testcoverage.yml

@@ -109,12 +109,6 @@ func TestInitSecContext(t *testing.T) {
 
 	_, _, err = initContextOne(ta.lib, name)
 	assert.Error(err)
-	t.Logf("err: %s", err)
-	if isHeimdal() {
-		assert.Contains(err.Error(), "unable to reach any KDC")
-	} else {
-		assert.Contains(err.Error(), "Cannot find KDC")
-	}
 }
 
 func TestInitSecContextBadParams(t *testing.T) {

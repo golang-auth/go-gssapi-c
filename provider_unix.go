@@ -1,4 +1,4 @@
-//go:build unix && !darwin && !freebsd
+//go:build unix && !darwin && !freebsd && !openbsd
 
 // SPDX-License-Identifier: Apache-2.0
 

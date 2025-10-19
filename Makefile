@@ -34,7 +34,7 @@ lint: | $(TOOLBIN)/golangci-lint $(TOOLBIN)/staticcheck
 	@echo ------ golangci-lint
 	@echo ------
 	$(TOOLBIN)/golangci-lint run
-	@echo -e "\n------ golangci-lint"
+	@echo -e "\n------ staticcheck"
 	@echo ------
 	$(TOOLBIN)/staticcheck 
 
