@@ -2,7 +2,10 @@ name: Light tests
 
 on:
   push:
-
+    branches:
+        - "!main"
+        - "!dev"
+  
 permissions:
   contents: read
 
