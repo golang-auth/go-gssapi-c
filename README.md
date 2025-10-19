@@ -6,12 +6,11 @@ The provider has been tested with the following OS/GSSAPI library combinations:
     * MIT Kerberos
     * Heimdal Kerberos 7.8.0
  * MacOS
-    * Apple Kerberos (a long-ago forked version of Heimdal 1.x)
+    * Apple Kerberos
     * MIT Kerberos (from Homebrew)
     * Heimdal Kerberos 7.8.0 (from Homebrew)
  * FreeBSD
-    * FreeBSD Kerberos (forked long ago from Heimdal 1.x)
-    * MIT Kerberos (from ports)
+    * FreeBSD Kerberos Kerberos (from ports)
     * Heimdal Kerberos 7.8.0 (from ports)
  * OpenBSD with Heimdal Kerberos 7.8.0 from ports
 
@@ -63,8 +62,8 @@ Heimdal 7.8 can be installed from the OpenBSD ports sytem and that version will 
 | MacOS            | MIT                    | krb5                    | `/opt/homebrew/opt/krb5/lib/pkgconfig` | `usepkgconfig` |
 | MacOS            | Heimdal 7.8            | heimdal                 | `/opt/homebrew/opt/heimdal/lib/pkgconfig` | `usepkgconfig` |
 | FreeBSD          | FreeBSD Kerberos       | n/a                     | n/a				 | n/a        |
-| FreeBSD          | MIT                    | krb5, pkgconf           | n/a 			 | usepkgconfig       |
-| FreeBSD          | Heimdal 7.8            | heimdal, pkgconf        | n/a 			 | usepkgconfig        |
+| FreeBSD          | MIT                    | krb5, pkgconf           | n/a 			 | `usepkgconfig`       |
+| FreeBSD          | Heimdal 7.8            | heimdal, pkgconf        | n/a 			 | `usepkgconfig`        |
 | OpenBSD          | Heimdal 7.8            | heimdal                 | n/a              | n/a        |
 
 Note that FreeBSD and Ubuntu cannot sanely support having MIT and Heimdal Kerbero installed at the same time as
