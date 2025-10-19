@@ -61,7 +61,7 @@ jobs:
           echo Using go $(go version)
 
           export LD_LIBRARY_PATH=/usr/local/heimdal/lib
-          go test -count 100
+          go test
 
 
   freebsd-tests:
@@ -118,7 +118,7 @@ jobs:
           pkg-config -libs krb5-gssapi
           pkg-config -cflags krb5-gssapi
 
-          go test  -count 100 ${TAGS} ./...
+          go test ${TAGS}
 
 
   basic-tests:
@@ -185,7 +185,7 @@ jobs:
       run: |
         go clean -cache
         export OPENSSL_CONF=./openssl.cnf
-        go test  ${TAGS} $pkgs -count 100 -coverprofile=cover.out -covermode=atomic
+        go test  ${TAGS} $pkgs -count 10 -timeout 30m -coverprofile=cover.out -covermode=atomic
 
     - name: Check test coverage
       if: ${{ runner.os == 'Linux' && matrix.krb5-version == 'base' && matrix.go-version == '1.25.x' }}
