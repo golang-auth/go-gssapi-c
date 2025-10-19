@@ -50,6 +50,7 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Test using OpenBSD VM
+      timeout-minutes: 30
       uses: vmactions/openbsd-vm@v1
       with:
         prepare: |
@@ -65,7 +66,7 @@ jobs:
 
   freebsd-tests:
     name: FreeBSD basic tests
-    timeout-minutes: 30
+    timeout-minutes: 60
     needs: consistency-checks
     strategy:
       fail-fast: false
@@ -79,6 +80,7 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Test using FreeBSD VM
+      timeout-minutes: 30
       uses: vmactions/freebsd-vm@v1
       with:
         prepare: |
@@ -121,7 +123,7 @@ jobs:
 
   basic-tests:
     name: Basic tests
-    timeout-minutes: 30 
+    timeout-minutes: 60 
     needs: consistency-checks
     strategy:
       fail-fast: false
@@ -179,6 +181,7 @@ jobs:
         echo pkgs=$(go list ./... | grep -v /examples/) >> "$GITHUB_ENV"
 
     - name: Run tests
+      timeout-minutes: 30
       run: |
         go clean -cache
         export OPENSSL_CONF=./openssl.cnf
