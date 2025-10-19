@@ -10,7 +10,8 @@ The provider has been tested with the following OS/GSSAPI library combinations:
     * MIT Kerberos (from Homebrew)
     * Heimdal Kerberos 7.8.0 (from Homebrew)
  * FreeBSD
-    * FreeBSD Kerberos Kerberos (from ports)
+    * FreeBSD Kerberos
+    * MIT Kerberos (from ports)
     * Heimdal Kerberos 7.8.0 (from ports)
  * OpenBSD with Heimdal Kerberos 7.8.0 from ports
 
