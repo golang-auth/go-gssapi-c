@@ -67,6 +67,6 @@ Heimdal 7.8 can be installed from the OpenBSD ports sytem and that version will 
 | FreeBSD          | Heimdal 7.8            | heimdal, pkgconf        | n/a 			 | `usepkgconfig`        |
 | OpenBSD          | Heimdal 7.8            | heimdal                 | n/a              | n/a        |
 
-Note that FreeBSD and Ubuntu cannot sanely support having MIT and Heimdal Kerbero installed at the same time as
+Note that FreeBSD and Ubuntu cannot sanely support having MIT and Heimdal Kerberos installed at the same time as
 both packages try to own the same pkg-config `.pc` files.
 
