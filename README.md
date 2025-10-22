@@ -1,6 +1,6 @@
 # Go-GSSAPI C bindings provider
 
-The go-gssapi-c package is a provider that implements the (Go GSSAPI)[golang-auth/go-gssapi/v3] interfaces for access to a C library implementing RFC 2744.
+The go-gssapi-c package is a provider that implements the [Go GSSAPI](https://github.com/golang-auth/go-gssapi/v3) interfaces for access to a C library implementing RFC 2744.
 The provider has been tested with the following OS/GSSAPI library combinations:
  * Linux
     * MIT Kerberos
@@ -55,6 +55,8 @@ supplying the `usepkgconf` build tag.  Note that it is not possible to support b
 Heimdal 7.8 can be installed from the OpenBSD ports sytem and that version will be used by the provider.
 
 
+### Summary of packages and configuration variables:
+
 | Operating system | GSSAPI implementation  | Pre-requisite packages | `PKG_CONFIG_PATH` | Build tags |
 | ---------------  | ---------------------- | ---------------------- | ----------------- | ---------- |
 | Ubuntu           | MIT                    | krb5-user, libkrb5-devel, pkg-config |  n/a   | n/a     |
@@ -96,4 +98,4 @@ both packages try to own the same pkg-config `.pc` files.
 
  * The `gss_inquire_context` routine does not return a valie mechanism ID.  We fudge it and return Kerberos.
 
- 
+

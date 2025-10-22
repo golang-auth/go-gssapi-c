@@ -169,7 +169,9 @@ func gssMinorErrors(mechStatus C.OM_uint32, mech g.GssMech) []error {
 		mechOid = mech.Oid()
 	}
 
-	cMechOid := oid2Coid(mechOid)
+	cMechOid, pinner := oid2Coid(mechOid, nil)
+	defer pinner.Unpin()
+
 	var minor, msgCtx C.OM_uint32
 	var statusString C.gss_buffer_desc = C.gss_empty_buffer // Released in *1
 

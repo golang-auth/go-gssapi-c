@@ -38,8 +38,10 @@ import (
 	g "github.com/golang-auth/go-gssapi/v3"
 )
 
-func mkChannelBindings(cb *g.ChannelBinding) (C.gss_channel_bindings_t, runtime.Pinner) {
-	pinner := runtime.Pinner{}
+func mkChannelBindings(cb *g.ChannelBinding, pinner *runtime.Pinner) (C.gss_channel_bindings_t, *runtime.Pinner) {
+	if pinner == nil {
+		pinner = &runtime.Pinner{}
+	}
 	cCB := C.gss_channel_bindings{}
 
 	if cb.InitiatorAddr != nil {

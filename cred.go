@@ -11,6 +11,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"runtime"
 
 	g "github.com/golang-auth/go-gssapi/v3"
 )
@@ -30,9 +31,8 @@ func hasDuplicateCred() bool {
 
 func (provider) AcquireCredential(name g.GssName, mechs []g.GssMech, usage g.CredUsage, lifetime *g.GssLifetime) (g.Credential, error) {
 	// turn the mechs into an array of OIDs
-	gssOidSet := gssOidSetFromOids(mechsToOids(mechs))
-	gssOidSet.Pin()
-	defer gssOidSet.Unpin()
+	cOidSet, pinner := gssOidSetFromOids(mechsToOids(mechs), nil)
+	defer pinner.Unpin()
 
 	var cGssName C.gss_name_t = C.GSS_C_NO_NAME
 	if name != nil {
@@ -46,7 +46,7 @@ func (provider) AcquireCredential(name g.GssName, mechs []g.GssMech, usage g.Cre
 
 	var minor C.OM_uint32
 	var cCredID C.gss_cred_id_t = C.GSS_C_NO_CREDENTIAL
-	major := C.gss_acquire_cred(&minor, cGssName, gssLifetimeToSeconds(lifetime), gssOidSet.oidSet, C.int(usage), &cCredID, nil, nil)
+	major := C.gss_acquire_cred(&minor, cGssName, gssLifetimeToSeconds(lifetime), cOidSet, C.int(usage), &cCredID, nil, nil)
 
 	if major != 0 {
 		return nil, makeStatus(major, minor)
@@ -140,7 +140,8 @@ func (c *Credential) Inquire() (*g.CredInfo, error) {
 }
 
 func (c *Credential) InquireByMech(mech g.GssMech) (*g.CredInfo, error) {
-	cMechOid := oid2Coid(mech.Oid())
+	cMechOid, pinner := oid2Coid(mech.Oid(), nil)
+	defer pinner.Unpin()
 
 	var minor C.OM_uint32
 	var cGssName C.gss_name_t // cGssName allocated by GSSAPI; releaseed by *1
@@ -198,8 +199,9 @@ func (c *Credential) Add(name g.GssName, mech g.GssMech, usage g.CredUsage, init
 	}
 
 	var cMechOid C.gss_OID = C.GSS_C_NO_OID
+	pinner := &runtime.Pinner{}
 	if mech != nil {
-		cMechOid = oid2Coid(mech.Oid())
+		cMechOid, pinner = oid2Coid(mech.Oid(), pinner)
 	}
 
 	var cGssName C.gss_name_t = C.GSS_C_NO_NAME

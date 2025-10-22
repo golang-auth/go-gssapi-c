@@ -48,7 +48,8 @@ func init() {
 
 // Localname implements the GssNameExtLocalname extension.
 func (n *GssName) Localname(mech g.GssMech) (string, error) {
-	cMechOid := oid2Coid(mech.Oid())
+	cMechOid, pinner := oid2Coid(mech.Oid(), nil)
+	defer pinner.Unpin()
 
 	var minor C.OM_uint32
 	var cOutputBuf C.gss_buffer_desc = C.gss_empty_buffer // cOutputBuf.value allocated by GSSAPI; released by *1
