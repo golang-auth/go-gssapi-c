@@ -28,7 +28,7 @@ func initContextOne(provider g.Provider, name g.GssName, opts ...g.InitSecContex
 		return nil, nil, errors.New("nil sec ctx")
 	}
 
-	outTok, err := secCtx.Continue(nil)
+	outTok, _, err := secCtx.Continue(nil)
 	if err == nil && len(outTok) == 0 {
 		err = errors.New("Empty first token")
 	}
@@ -58,7 +58,7 @@ func acceptContextOne(provider g.Provider, cred g.Credential, inTok []byte, cb *
 		return nil, nil, errors.New("nil sec ctx")
 	}
 
-	outTok, err := secCtx.Continue(inTok)
+	outTok, _, err := secCtx.Continue(inTok)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -383,13 +383,13 @@ func TestSecContextEstablishment(t *testing.T) {
 
 	var initiatorTok, acceptorTok []byte
 	for secCtxInitiator.ContinueNeeded() || secCtxAcceptor.ContinueNeeded() {
-		acceptorTok, err = secCtxInitiator.Continue(initiatorTok)
+		acceptorTok, _, err = secCtxInitiator.Continue(initiatorTok)
 		if err != nil {
 			break
 		}
 
 		if len(acceptorTok) > 0 {
-			initiatorTok, err = secCtxAcceptor.Continue(acceptorTok)
+			initiatorTok, _, err = secCtxAcceptor.Continue(acceptorTok)
 			if err != nil {
 				break
 			}

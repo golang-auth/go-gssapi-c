@@ -25,9 +25,8 @@ func nameFromGssInternal(name C.gss_name_t) *GssName {
 }
 
 func (provider) ImportName(name string, nameType g.GssNameType) (g.GssName, error) {
-	cNameOid := oid2Coid(nameType.Oid())
-
-	cNameBuf, pinner := bytesToCBuffer([]byte(name))
+	cNameOid, pinner := oid2Coid(nameType.Oid(), nil)
+	cNameBuf, pinner := bytesToCBuffer([]byte(name), pinner)
 	defer pinner.Unpin()
 
 	var minor C.OM_uint32
@@ -45,7 +44,8 @@ func (provider) ImportName(name string, nameType g.GssNameType) (g.GssName, erro
 }
 
 func (provider) InquireNamesForMech(mech g.GssMech) ([]g.GssNameType, error) {
-	cMechOid := oid2Coid(mech.Oid())
+	cMechOid, pinner := oid2Coid(mech.Oid(), nil)
+	defer pinner.Unpin()
 
 	var minor C.OM_uint32
 	var cNameTypes C.gss_OID_set = C.GSS_C_NO_OID_SET // cNameTypes.elements allocated by GSSAPI; released by *1
@@ -55,6 +55,7 @@ func (provider) InquireNamesForMech(mech g.GssMech) ([]g.GssNameType, error) {
 		return nil, makeStatus(major, minor)
 	}
 
+	// *1 free GSSAPI alocated OID set
 	defer C.gss_release_oid_set(&minor, &cNameTypes)
 
 	nameTypeOids := oidsFromGssOidSet(cNameTypes)
@@ -176,7 +177,8 @@ func (n *GssName) Canonicalize(mech g.GssMech) (g.GssName, error) {
 		return nil, makeCustomStatus(C.GSS_S_UNAVAILABLE, fmt.Errorf("gss_display_name on this name is not stable on this version of Heimdal"))
 	}
 
-	cMechOid := oid2Coid(mech.Oid())
+	cMechOid, pinner := oid2Coid(mech.Oid(), nil)
+	defer pinner.Unpin()
 
 	var minor C.OM_uint32
 	var cOutName C.gss_name_t = C.GSS_C_NO_NAME

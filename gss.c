@@ -17,4 +17,3 @@ int is_mac_framework() {
 }
 
 gss_buffer_desc gss_empty_buffer = GSS_C_EMPTY_BUFFER;
- 

@@ -8,12 +8,36 @@ package gssapi
 import "C"
 
 import (
+	"encoding/asn1"
+	"fmt"
 	"net"
 	"runtime"
+	"strings"
 	"unsafe"
 
 	g "github.com/golang-auth/go-gssapi/v3"
 )
+
+// Convert a Go OID to a string
+func oid2String(oid g.Oid) (string, error) {
+	objId := make(asn1.ObjectIdentifier, 100)
+
+	oid = append([]byte{0x06, byte(len(oid))}, oid...)
+	_, err := asn1.Unmarshal(oid, &objId)
+	if err != nil {
+		return "", err
+	}
+
+	var s strings.Builder
+	for i, o := range objId {
+		if i > 0 {
+			s.WriteString(".")
+		}
+		s.WriteString(fmt.Sprintf("%d", o))
+	}
+
+	return s.String(), nil
+}
 
 // Convert from a C OID set to slice of OID objects
 func oidsFromGssOidSet(oidSet C.gss_OID_set) []g.Oid {
@@ -29,41 +53,35 @@ func oidsFromGssOidSet(oidSet C.gss_OID_set) []g.Oid {
 }
 
 // Convert from a slice of OID object to a set of C OIDS (see below)
-func gssOidSetFromOids(oids []g.Oid) gssOidSet {
-	ret := gssOidSet{}
-
-	if len(oids) > 0 {
-		ret.oidPtrs = make([]C.gss_OID, len(oids))
-
-		for i, oid := range oids {
-			ret.oidPtrs[i] = oid2Coid(oid)
-		}
-
-		ret.oidSet = &C.gss_OID_set_desc{C.size_t(len(oids)), ret.oidPtrs[0]}
+func gssOidSetFromOids(oids []g.Oid, pinner *runtime.Pinner) (C.gss_OID_set, *runtime.Pinner) {
+	if pinner == nil {
+		pinner = &runtime.Pinner{}
 	}
 
-	return ret
-}
-
-// Wrap a C GSS OID set such that we can pin and then unpin the underlying pointers
-// so that the garbage collector doesn't touch them while they are being used
-// by the C layer.
-type gssOidSet struct {
-	pinner  runtime.Pinner
-	oidSet  C.gss_OID_set
-	oidPtrs []C.gss_OID
-}
-
-// Pin the pointers in the OID set
-func (oidset *gssOidSet) Pin() {
-	for _, p := range oidset.oidPtrs {
-		oidset.pinner.Pin(p)
+	if len(oids) == 0 {
+		return nil, pinner
 	}
-}
 
-// Unpin the pointers
-func (oidset *gssOidSet) Unpin() {
-	oidset.pinner.Unpin()
+	// Create a Go slice containing the C gss_OID elements, which is gauranteed to be
+	// contiguous, and suitable for use as a C array
+	oidPtrs := make([]C.gss_OID, len(oids))
+
+	// All the OID pointers will be pinned after this loop
+	for i, oid := range oids {
+		// oid2Coid will pin memory pointed to by gss_OID.elements
+		oidPtrs[i], pinner = oid2Coid(oid, pinner)
+
+		// but we also need to pin the gss_OID struct itself because its a member
+		// of gss_OID_set
+		pinner.Pin(oidPtrs[i])
+	}
+
+	cOidSet := C.gss_OID_set_desc{
+		count:    C.size_t(len(oids)),
+		elements: oidPtrs[0],
+	}
+
+	return &cOidSet, pinner
 }
 
 // Convert Go GSSAPI interface mech names to a set of mech OIDs
@@ -80,8 +98,10 @@ func mechsToOids(mechs []g.GssMech) []g.Oid {
 // so that the garbage collector doesn't touch the memory.  Return the
 // pinner, which should be used to unpin the memory after the C function
 // returns.
-func bytesToCBuffer(b []byte) (C.gss_buffer_desc, runtime.Pinner) {
-	pinner := runtime.Pinner{}
+func bytesToCBuffer(b []byte, pinner *runtime.Pinner) (C.gss_buffer_desc, *runtime.Pinner) {
+	if pinner == nil {
+		pinner = &runtime.Pinner{}
+	}
 
 	value := unsafe.Pointer(nil)
 	if len(b) > 0 {
