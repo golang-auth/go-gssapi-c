@@ -18,30 +18,30 @@ func TestSecContextInterface(t *testing.T) {
 	_ = gsc
 }
 
-func initContextOne(provider g.Provider, name g.GssName, opts ...g.InitSecContextOption) (g.SecContext, []byte, error) {
+func initContextOne(provider g.Provider, name g.GssName, opts ...g.InitSecContextOption) (g.SecContext, []byte, *g.SecContextInfoPartial, error) {
 	secCtx, err := provider.InitSecContext(name, opts...)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	if secCtx == nil {
-		return nil, nil, errors.New("nil sec ctx")
+		return nil, nil, nil, errors.New("nil sec ctx")
 	}
 
-	outTok, _, err := secCtx.Continue(nil)
+	outTok, info, err := secCtx.Continue(nil)
 	if err == nil && len(outTok) == 0 {
 		err = errors.New("Empty first token")
 	}
 
 	ctx := secCtx.(*SecContext)
 	if err == nil && ctx.id == nil {
-		return nil, nil, errors.New("unexpected nil context")
+		return nil, nil, nil, errors.New("unexpected nil context")
 	}
 
-	return secCtx, outTok, err
+	return secCtx, outTok, &info, err
 }
 
-func acceptContextOne(provider g.Provider, cred g.Credential, inTok []byte, cb *g.ChannelBinding) (g.SecContext, []byte, error) {
+func acceptContextOne(provider g.Provider, cred g.Credential, inTok []byte, cb *g.ChannelBinding) (g.SecContext, []byte, *g.SecContextInfoPartial, error) {
 	var opts []g.AcceptSecContextOption
 	if cred != nil {
 		opts = append(opts, g.WithAcceptorCredential(cred))
@@ -51,24 +51,24 @@ func acceptContextOne(provider g.Provider, cred g.Credential, inTok []byte, cb *
 	}
 	secCtx, err := provider.AcceptSecContext(opts...)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	if secCtx == nil {
-		return nil, nil, errors.New("nil sec ctx")
+		return nil, nil, nil, errors.New("nil sec ctx")
 	}
 
-	outTok, _, err := secCtx.Continue(inTok)
+	outTok, info, err := secCtx.Continue(inTok)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	ctx := secCtx.(*SecContext)
 	if err == nil && ctx.id == nil {
-		return nil, nil, errors.New("unexpected nil context")
+		return nil, nil, nil, errors.New("unexpected nil context")
 	}
 
-	return secCtx, outTok, err
+	return secCtx, outTok, &info, err
 }
 
 func TestInitSecContext(t *testing.T) {
@@ -82,7 +82,7 @@ func TestInitSecContext(t *testing.T) {
 	defer name.Release() //nolint:errcheck
 
 	// no continue should be needed when we don't request mutual auth
-	secCtx, outTok, err := initContextOne(ta.lib, name)
+	secCtx, outTok, _, err := initContextOne(ta.lib, name)
 	assert.NoError(err)
 	defer secCtx.Delete() //nolint:errcheck
 	if err == nil {
@@ -92,7 +92,7 @@ func TestInitSecContext(t *testing.T) {
 	}
 
 	// .. but should be needed if we do request mutual auth
-	secCtx, outTok, err = initContextOne(ta.lib, name, g.WithInitiatorFlags(g.ContextFlagMutual))
+	secCtx, outTok, _, err = initContextOne(ta.lib, name, g.WithInitiatorFlags(g.ContextFlagMutual))
 	assert.NoError(err)
 	defer secCtx.Delete() //nolint:errcheck
 	if err == nil {
@@ -107,7 +107,7 @@ func TestInitSecContext(t *testing.T) {
 	assert.NoErrorFatal(err)
 	defer name.Release() //nolint:errcheck
 
-	_, _, err = initContextOne(ta.lib, name)
+	_, _, _, err = initContextOne(ta.lib, name)
 	assert.Error(err)
 }
 
@@ -157,7 +157,7 @@ func TestInitSecContextWithCredential(t *testing.T) {
 	assert.NoErrorFatal(err)
 	defer cred.Release() //nolint:errcheck
 
-	secCtx, outTok, err := initContextOne(ta.lib, name, g.WithInitiatorCredential(cred))
+	secCtx, outTok, _, err := initContextOne(ta.lib, name, g.WithInitiatorCredential(cred))
 	assert.NoError(err)
 	defer secCtx.Delete() //nolint:errcheck
 	if err == nil {
@@ -168,7 +168,7 @@ func TestInitSecContextWithCredential(t *testing.T) {
 
 	// test with a bad credential
 	cred = &someCredential{}
-	_, _, err = initContextOne(ta.lib, name, g.WithInitiatorCredential(cred))
+	_, _, _, err = initContextOne(ta.lib, name, g.WithInitiatorCredential(cred))
 	assert.ErrorIs(err, g.ErrDefectiveCredential)
 }
 
@@ -196,7 +196,7 @@ func TestAcceptSecContext(t *testing.T) {
 				opts = append(opts, g.WithInitiatorFlags(g.ContextFlagMutual))
 			}
 
-			secCtxInitiator, initiatorTok, err := initContextOne(ta.lib, name, opts...)
+			secCtxInitiator, initiatorTok, _, err := initContextOne(ta.lib, name, opts...)
 			assert.NoErrorFatal(err)
 			defer secCtxInitiator.Delete() //nolint:errcheck
 			assert.Equal(secCtxInitiator.ContinueNeeded(), mutual)
@@ -204,7 +204,7 @@ func TestAcceptSecContext(t *testing.T) {
 			// the initiator token should be accepted by AcceptSecContext because we have a keytab
 			// for the service princ.  The output token should be empty because the initiator
 			// didn't request  mutual auth
-			secCtxAcceptor, acceptorTok, err := acceptContextOne(ta.lib, nil, initiatorTok, nil)
+			secCtxAcceptor, acceptorTok, _, err := acceptContextOne(ta.lib, nil, initiatorTok, nil)
 			assert.NoErrorFatal(err)
 			defer secCtxAcceptor.Delete() //nolint:errcheck
 			assert.NotNil(secCtxAcceptor)
@@ -214,7 +214,6 @@ func TestAcceptSecContext(t *testing.T) {
 			} else {
 				assert.Empty(acceptorTok)
 			}
-
 		})
 	}
 
@@ -236,17 +235,17 @@ func TestAcceptSecContextWithCredential(t *testing.T) {
 	assert.NoErrorFatal(err)
 	defer cred.Release() //nolint:errcheck
 
-	secCtxInitiator, initiatorTok, err := initContextOne(ta.lib, name)
+	secCtxInitiator, initiatorTok, _, err := initContextOne(ta.lib, name)
 	assert.NoErrorFatal(err)
 	defer secCtxInitiator.Delete() //nolint:errcheck
 
-	secCtxAcceptor, _, err := acceptContextOne(ta.lib, cred, initiatorTok, nil)
+	secCtxAcceptor, _, _, err := acceptContextOne(ta.lib, cred, initiatorTok, nil)
 	assert.NoErrorFatal(err)
 	defer secCtxAcceptor.Delete() //nolint:errcheck
 
 	// test with a bad credential
 	cred = &someCredential{}
-	_, _, err = acceptContextOne(ta.lib, cred, initiatorTok, nil)
+	_, _, _, err = acceptContextOne(ta.lib, cred, initiatorTok, nil)
 	assert.ErrorIs(err, g.ErrDefectiveCredential)
 
 }
@@ -260,7 +259,7 @@ func TestDeleteSecContext(t *testing.T) {
 	assert.NoErrorFatal(err)
 	defer name.Release() //nolint:errcheck
 
-	secCtx, _, err := initContextOne(ta.lib, name)
+	secCtx, _, _, err := initContextOne(ta.lib, name)
 	assert.NoErrorFatal(err)
 
 	// deleting a live or a deleted context should not return errors
@@ -283,11 +282,11 @@ func TestContextExpiresAt(t *testing.T) {
 	assert.NoErrorFatal(err)
 	defer name.Release() //nolint:errcheck
 
-	secCtxInitiator, initiatorTok, err := initContextOne(ta.lib, name)
+	secCtxInitiator, initiatorTok, _, err := initContextOne(ta.lib, name)
 	assert.NoError(err)
 	defer secCtxInitiator.Delete() //nolint:errcheck
 
-	secCtxAcceptor, _, err := acceptContextOne(ta.lib, nil, initiatorTok, nil)
+	secCtxAcceptor, _, _, err := acceptContextOne(ta.lib, nil, initiatorTok, nil)
 	assert.NoError(err)
 	defer secCtxAcceptor.Delete() //nolint:errcheck
 
@@ -320,7 +319,7 @@ func TestContextWrapSizeLimit(t *testing.T) {
 
 	o := g.WithInitiatorFlags(g.ContextFlagInteg | g.ContextFlagConf)
 
-	secCtxInitiator, _, err := initContextOne(ta.lib, name, o)
+	secCtxInitiator, _, _, err := initContextOne(ta.lib, name, o)
 	assert.NoError(err)
 	defer secCtxInitiator.Delete() //nolint:errcheck
 
@@ -340,7 +339,7 @@ func TestExportImportSecContext(t *testing.T) {
 	assert.NoErrorFatal(err)
 	defer name.Release() //nolint:errcheck
 
-	secCtx, _, err := initContextOne(ta.lib, name)
+	secCtx, _, _, err := initContextOne(ta.lib, name)
 	assert.NoErrorFatal(err)
 	defer secCtx.Delete() //nolint:errcheck
 
@@ -479,11 +478,11 @@ func TestChannelBindings(t *testing.T) {
 				reqOpts = append(reqOpts, g.WithInitiatorChannelBinding(tt.icb))
 			}
 
-			initSecCtx, initiatorTok, err := initContextOne(ta.lib, name, reqOpts...)
+			initSecCtx, initiatorTok, _, err := initContextOne(ta.lib, name, reqOpts...)
 			assert.NoErrorFatal(err)
 			defer initSecCtx.Delete() //nolint:errcheck
 
-			secCtxAcceptor, _, err := acceptContextOne(ta.lib, nil, initiatorTok, tt.acb)
+			secCtxAcceptor, _, _, err := acceptContextOne(ta.lib, nil, initiatorTok, tt.acb)
 			defer func() {
 				if secCtxAcceptor != nil {
 					_, _ = secCtxAcceptor.Delete() //nolint:errcheck
