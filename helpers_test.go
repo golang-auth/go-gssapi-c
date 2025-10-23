@@ -27,6 +27,7 @@ func TestGssOidSetFromOids(t *testing.T) {
 	oidSet, pinner = gssOidSetFromOids(oids, nil)
 	assert.NotNil(oidSet)
 	assert.NotNil(pinner)
+
 	if oidSet != nil {
 		assert.Equal(2, int(oidSet.count))
 

@@ -17,7 +17,7 @@ func TestLocalname(t *testing.T) {
 	assert.NoErrorFatal(err)
 	defer releaseName(targetName)
 
-	secCtxInitiator, _, err := initContextOne(ta.lib, targetName)
+	secCtxInitiator, _, _, err := initContextOne(ta.lib, targetName)
 	assert.NoErrorFatal(err)
 	defer secCtxInitiator.Delete() //nolint:errcheck
 
@@ -58,11 +58,11 @@ func TestInquireName(t *testing.T) {
 
 	// .. but the name returned from acceptSecContext is, plus it
 	// should have attributes
-	secCtxInitiator, initiatorTok, err := initContextOne(ta.lib, targetName)
+	secCtxInitiator, initiatorTok, _, err := initContextOne(ta.lib, targetName)
 	assert.NoErrorFatal(err)
 	defer func() { _, _ = secCtxInitiator.Delete() }()
 
-	secCtxAcceptor, _, err := acceptContextOne(ta.lib, nil, initiatorTok, nil)
+	secCtxAcceptor, _, _, err := acceptContextOne(ta.lib, nil, initiatorTok, nil)
 	assert.NoErrorFatal(err)
 	defer func() { _, _ = secCtxAcceptor.Delete() }()
 

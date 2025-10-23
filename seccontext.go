@@ -137,19 +137,16 @@ func (c *SecContext) initSecContext() ([]byte, g.SecContextInfoPartial, error) {
 	c.continueNeeded = (cMajor & C.GSS_S_CONTINUE_NEEDED) > 0
 	c.id = cGssCtxID
 
-	// Prot and trans aren't really context flags - they are communicated with callers separately
-	protFlag := cRetFlags & C.GSS_C_PROT_READY_FLAG
-	transFlag := cRetFlags & C.GSS_C_TRANS_FLAG
-	cRetFlags &= ^C.OM_uint32(C.GSS_C_PROT_READY_FLAG | C.GSS_C_TRANS_FLAG)
+	ctxFlags, protFlag, transFlag := splitFlags(cRetFlags)
 
 	info := g.SecContextInfoPartial{
 		InitiatorName:    c.initiatorName,
-		Flags:            g.ContextFlag(cRetFlags),
+		Flags:            ctxFlags,
 		ExpiresAt:        timeRecToGssLifetime(cTimeRec),
 		LocallyInitiated: c.isInitiator,
 		FullyEstablished: !c.continueNeeded,
-		ProtectionReady:  protFlag > 0,
-		Transferrable:    transFlag > 0,
+		ProtectionReady:  protFlag,
+		Transferrable:    transFlag,
 	}
 	if cActualMech != C.GSS_C_NO_OID {
 		mech, err := g.MechFromOid(oidFromGssOid(cActualMech))
@@ -160,6 +157,14 @@ func (c *SecContext) initSecContext() ([]byte, g.SecContextInfoPartial, error) {
 	}
 
 	return outToken, info, nil
+}
+
+// Prot and trans aren't really context flags - they are communicated with callers separately
+func splitFlags(flags C.OM_uint32) (g.ContextFlag, bool, bool) {
+	protFlag := flags & C.GSS_C_PROT_READY_FLAG
+	transFlag := flags & C.GSS_C_TRANS_FLAG
+	flags &= ^C.OM_uint32(C.GSS_C_PROT_READY_FLAG | C.GSS_C_TRANS_FLAG)
+	return g.ContextFlag(flags), protFlag > 0, transFlag > 0
 }
 
 func (c *SecContext) acceptSecContext(inputToken []byte) ([]byte, g.SecContextInfoPartial, error) {
@@ -182,13 +187,14 @@ func (c *SecContext) acceptSecContext(inputToken []byte) ([]byte, g.SecContextIn
 		cChBindings, pinner = mkChannelBindings(c.acceptOptions.ChannelBinding, pinner)
 	}
 
-	var cMinor C.OM_uint32
-	var cSrcAcceptorName C.gss_name_t = C.GSS_C_NO_NAME
+	var cMinor, cRetFlags, cTimeRec C.OM_uint32
+	var cInitiatorName C.gss_name_t = C.GSS_C_NO_NAME
 	var cGssCtxID C.gss_ctx_id_t = C.GSS_C_NO_CONTEXT
 	var cOutToken C.gss_buffer_desc = C.gss_empty_buffer // cOutToken.value allocated by GSSAPI; released by *1
+	var cActualMech C.gss_OID = C.GSS_C_NO_OID
 	cInputToken, pinner := bytesToCBuffer(inputToken, pinner)
 
-	cMajor := C.gss_accept_sec_context(&cMinor, &cGssCtxID, cGssAcceptorCred, &cInputToken, cChBindings, &cSrcAcceptorName, nil, &cOutToken, nil, nil, &cGssDelegCred)
+	cMajor := C.gss_accept_sec_context(&cMinor, &cGssCtxID, cGssAcceptorCred, &cInputToken, cChBindings, &cInitiatorName, &cActualMech, &cOutToken, &cRetFlags, &cTimeRec, &cGssDelegCred)
 	if cMajor != C.GSS_S_COMPLETE && cMajor != C.GSS_S_CONTINUE_NEEDED {
 		return nil, g.SecContextInfoPartial{}, makeStatus(cMajor, cMinor)
 	}
@@ -206,8 +212,27 @@ func (c *SecContext) acceptSecContext(inputToken []byte) ([]byte, g.SecContextIn
 	}
 	c.continueNeeded = (cMajor & C.GSS_S_CONTINUE_NEEDED) != 0
 	c.id = cGssCtxID
-	c.acceptorName = nameFromGssInternal(cSrcAcceptorName)
-	info := g.SecContextInfoPartial{}
+	c.initiatorName = nameFromGssInternal(cInitiatorName)
+
+	ctxFlags, protFlag, transFlag := splitFlags(cRetFlags)
+
+	info := g.SecContextInfoPartial{
+		InitiatorName:    c.initiatorName,
+		Flags:            ctxFlags,
+		ExpiresAt:        timeRecToGssLifetime(cTimeRec),
+		LocallyInitiated: c.isInitiator,
+		FullyEstablished: !c.continueNeeded,
+		ProtectionReady:  protFlag,
+		Transferrable:    transFlag,
+	}
+	if cActualMech != C.GSS_C_NO_OID {
+		mech, err := g.MechFromOid(oidFromGssOid(cActualMech))
+		if err != nil {
+			return nil, g.SecContextInfoPartial{}, fmt.Errorf("unknown mech returned from gss_accept_sec_context: %w", g.ErrBadMech)
+		}
+		info.Mech = mech
+	}
+
 	return outToken, info, nil
 }
 
@@ -239,12 +264,13 @@ func (c *SecContext) Continue(inputToken []byte) ([]byte, g.SecContextInfoPartia
 		}
 	}
 
-	info := g.SecContextInfoPartial{}
-
 	// otherwise continue establishing the context..
 	//
-	var cMajor, cMinor C.OM_uint32
+	var cMajor, cMinor, cRetFlags, cTimeRec C.OM_uint32
 	var cOutToken C.gss_buffer_desc = C.gss_empty_buffer // cOutToken.value allocated by GSSAPI; released by *1
+	var cActualMech C.gss_OID = C.GSS_C_NO_OID
+	var cInitiatorName C.gss_name_t = C.GSS_C_NO_NAME
+	var cGssDelegCred C.gss_cred_id_t = C.GSS_C_NO_CREDENTIAL
 	cInputToken, pinner := bytesToCBuffer(inputToken, nil)
 	defer pinner.Unpin()
 
@@ -255,24 +281,61 @@ func (c *SecContext) Continue(inputToken []byte) ([]byte, g.SecContextInfoPartia
 	cMechOid, pinner := oid2Coid(mech, pinner)
 
 	if c.isInitiator {
-		cMajor = C.gss_init_sec_context(&cMinor, C.GSS_C_NO_CREDENTIAL, &c.id, c.initiatorName.name, cMechOid, 0, 0, nil, &cInputToken, nil, &cOutToken, nil, nil)
+		cMajor = C.gss_init_sec_context(&cMinor, C.GSS_C_NO_CREDENTIAL, &c.id, c.initiatorName.name, cMechOid, 0, 0, nil, &cInputToken, &cActualMech, &cOutToken, &cRetFlags, &cTimeRec)
 	} else {
-		cMajor = C.gss_accept_sec_context(&cMinor, &c.id, C.GSS_C_NO_CREDENTIAL, &cInputToken, nil, nil, nil, &cOutToken, nil, nil, nil)
+		// Ask for the initiator name and delegated credential if we don't already have them
+		var cpInitiatorName *C.gss_name_t = nil
+		if c.initiatorName != nil {
+			cpInitiatorName = &cInitiatorName
+		}
+		var cpGssDelegCred *C.gss_cred_id_t = nil
+		if c.delegCred != nil {
+			cpGssDelegCred = &cGssDelegCred
+		}
+		cMajor = C.gss_accept_sec_context(&cMinor, &c.id, C.GSS_C_NO_CREDENTIAL, &cInputToken, nil, cpInitiatorName, &cActualMech, &cOutToken, &cRetFlags, &cTimeRec, cpGssDelegCred)
 	}
 
 	if cMajor != C.GSS_S_COMPLETE && cMajor != C.GSS_S_CONTINUE_NEEDED {
-		return nil, info, makeStatus(cMajor, cMinor)
+		return nil, g.SecContextInfoPartial{}, makeStatus(cMajor, cMinor)
 	}
 
 	// *1  release GSSAPI allocated buffer
 	defer C.gss_release_buffer(&cMinor, &cOutToken)
 
+	// only if we're an acceptor and didn't already have a delegated credential
+	if cGssDelegCred != C.GSS_C_NO_CREDENTIAL {
+		c.delegCred = &Credential{cGssDelegCred, g.CredUsageInitiateOnly, false}
+	}
+	// only if we're an acceptor and didn't already have an initiator name
+	if cInitiatorName != C.GSS_C_NO_NAME {
+		c.initiatorName = nameFromGssInternal(cInitiatorName)
+	}
+
 	var outToken []byte = nil
 	if cOutToken != C.gss_empty_buffer {
 		outToken = C.GoBytes(cOutToken.value, C.int(cOutToken.length))
 	}
-
 	c.continueNeeded = cMajor == C.GSS_S_CONTINUE_NEEDED
+
+	ctxFlags, protFlag, transFlag := splitFlags(cRetFlags)
+
+	info := g.SecContextInfoPartial{
+		InitiatorName:    c.initiatorName,
+		Flags:            ctxFlags,
+		ExpiresAt:        timeRecToGssLifetime(cTimeRec),
+		LocallyInitiated: c.isInitiator,
+		FullyEstablished: !c.continueNeeded,
+		ProtectionReady:  protFlag,
+		Transferrable:    transFlag,
+	}
+	if cActualMech != C.GSS_C_NO_OID {
+		mech, err := g.MechFromOid(oidFromGssOid(cActualMech))
+		if err != nil {
+			return nil, g.SecContextInfoPartial{}, fmt.Errorf("unknown mech returned from gss_accept_sec_context: %w", g.ErrBadMech)
+		}
+		info.Mech = mech
+	}
+
 	return outToken, info, nil
 }
 
