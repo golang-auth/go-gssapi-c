@@ -8,12 +8,36 @@ package gssapi
 import "C"
 
 import (
+	"encoding/asn1"
+	"fmt"
 	"net"
 	"runtime"
+	"strings"
 	"unsafe"
 
 	g "github.com/golang-auth/go-gssapi/v3"
 )
+
+// Convert a Go OID to a string
+func oid2String(oid g.Oid) (string, error) {
+	objId := make(asn1.ObjectIdentifier, 100)
+
+	oid = append([]byte{0x06, byte(len(oid))}, oid...)
+	_, err := asn1.Unmarshal(oid, &objId)
+	if err != nil {
+		return "", err
+	}
+
+	var s strings.Builder
+	for i, o := range objId {
+		if i > 0 {
+			s.WriteString(".")
+		}
+		s.WriteString(fmt.Sprintf("%d", o))
+	}
+
+	return s.String(), nil
+}
 
 // Convert from a C OID set to slice of OID objects
 func oidsFromGssOidSet(oidSet C.gss_OID_set) []g.Oid {
@@ -35,8 +59,8 @@ func gssOidSetFromOids(oids []g.Oid, pinner *runtime.Pinner) (C.gss_OID_set, *ru
 	}
 
 	if len(oids) == 0 {
+		return nil, pinner
 	}
-	return nil, pinner
 
 	// Create a Go slice containing the C gss_OID elements, which is gauranteed to be
 	// contiguous, and suitable for use as a C array

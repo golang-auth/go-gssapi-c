@@ -62,6 +62,7 @@ func (provider) InitSecContext(name g.GssName, opts ...g.InitSecContextOption) (
 		return nil, fmt.Errorf("bad name type %T, %w", name, g.ErrBadName)
 	}
 
+	// stash the initiator name so we can use it during the context establishment process
 	savedName, err := nameImpl.Duplicate()
 	if err != nil {
 		return nil, fmt.Errorf("%w duplicating name: %w", g.ErrFailure, err)
@@ -116,25 +117,47 @@ func (c *SecContext) initSecContext() ([]byte, g.SecContextInfoPartial, error) {
 		cChBindings, pinner = mkChannelBindings(c.initOptions.ChannelBinding, pinner)
 	}
 
-	var minor C.OM_uint32
+	var cMinor, cRetFlags, cTimeRec C.OM_uint32
 	var cGssCtxID C.gss_ctx_id_t = C.GSS_C_NO_CONTEXT
 	var cOutToken C.gss_buffer_desc = C.gss_empty_buffer // cOutToken.value allocated by GSSAPI; released by *1
-	major := C.gss_init_sec_context(&minor, cGssCred, &cGssCtxID, cGssTargetName, cMechOid, C.OM_uint32(c.initOptions.Flags), C.OM_uint32(c.initOptions.Lifetime.Seconds()), cChBindings, nil, nil, &cOutToken, nil, nil)
+	var cActualMech C.gss_OID = C.GSS_C_NO_OID           // DO NOT FREE
+	cMajor := C.gss_init_sec_context(&cMinor, cGssCred, &cGssCtxID, cGssTargetName, cMechOid, C.OM_uint32(c.initOptions.Flags), C.OM_uint32(c.initOptions.Lifetime.Seconds()), cChBindings, nil, &cActualMech, &cOutToken, &cRetFlags, &cTimeRec)
 
-	if major != C.GSS_S_COMPLETE && (major&C.GSS_S_CONTINUE_NEEDED) == 0 {
-		return nil, g.SecContextInfoPartial{}, makeMechStatus(major, minor, c.initOptions.Mech)
+	if cMajor != C.GSS_S_COMPLETE && (cMajor&C.GSS_S_CONTINUE_NEEDED) == 0 {
+		return nil, g.SecContextInfoPartial{}, makeMechStatus(cMajor, cMinor, c.initOptions.Mech)
 	}
 
 	// *1  release GSSAPI allocated buffer
-	defer C.gss_release_buffer(&minor, &cOutToken)
+	defer C.gss_release_buffer(&cMinor, &cOutToken)
 
 	var outToken []byte = nil
 	if cOutToken != C.gss_empty_buffer {
 		outToken = C.GoBytes(cOutToken.value, C.int(cOutToken.length))
 	}
-	c.continueNeeded = (major & C.GSS_S_CONTINUE_NEEDED) > 0
+	c.continueNeeded = (cMajor & C.GSS_S_CONTINUE_NEEDED) > 0
 	c.id = cGssCtxID
-	info := g.SecContextInfoPartial{}
+
+	// Prot and trans aren't really context flags - they are communicated with callers separately
+	protFlag := cRetFlags & C.GSS_C_PROT_READY_FLAG
+	transFlag := cRetFlags & C.GSS_C_TRANS_FLAG
+	cRetFlags &= ^C.OM_uint32(C.GSS_C_PROT_READY_FLAG | C.GSS_C_TRANS_FLAG)
+
+	info := g.SecContextInfoPartial{
+		InitiatorName:    c.initiatorName,
+		Flags:            g.ContextFlag(cRetFlags),
+		ExpiresAt:        timeRecToGssLifetime(cTimeRec),
+		LocallyInitiated: c.isInitiator,
+		FullyEstablished: !c.continueNeeded,
+		ProtectionReady:  protFlag > 0,
+		Transferrable:    transFlag > 0,
+	}
+	if cActualMech != C.GSS_C_NO_OID {
+		mech, err := g.MechFromOid(oidFromGssOid(cActualMech))
+		if err != nil {
+			return outToken, info, fmt.Errorf("unknown mech returned from gss_init_sec_context: %w", g.ErrBadMech)
+		}
+		info.Mech = mech
+	}
 
 	return outToken, info, nil
 }
@@ -159,19 +182,19 @@ func (c *SecContext) acceptSecContext(inputToken []byte) ([]byte, g.SecContextIn
 		cChBindings, pinner = mkChannelBindings(c.acceptOptions.ChannelBinding, pinner)
 	}
 
-	var minor C.OM_uint32
+	var cMinor C.OM_uint32
 	var cSrcAcceptorName C.gss_name_t = C.GSS_C_NO_NAME
 	var cGssCtxID C.gss_ctx_id_t = C.GSS_C_NO_CONTEXT
 	var cOutToken C.gss_buffer_desc = C.gss_empty_buffer // cOutToken.value allocated by GSSAPI; released by *1
 	cInputToken, pinner := bytesToCBuffer(inputToken, pinner)
 
-	major := C.gss_accept_sec_context(&minor, &cGssCtxID, cGssAcceptorCred, &cInputToken, cChBindings, &cSrcAcceptorName, nil, &cOutToken, nil, nil, &cGssDelegCred)
-	if major != C.GSS_S_COMPLETE && major != C.GSS_S_CONTINUE_NEEDED {
-		return nil, g.SecContextInfoPartial{}, makeStatus(major, minor)
+	cMajor := C.gss_accept_sec_context(&cMinor, &cGssCtxID, cGssAcceptorCred, &cInputToken, cChBindings, &cSrcAcceptorName, nil, &cOutToken, nil, nil, &cGssDelegCred)
+	if cMajor != C.GSS_S_COMPLETE && cMajor != C.GSS_S_CONTINUE_NEEDED {
+		return nil, g.SecContextInfoPartial{}, makeStatus(cMajor, cMinor)
 	}
 
 	// *1  release GSSAPI allocated buffer
-	defer C.gss_release_buffer(&minor, &cOutToken)
+	defer C.gss_release_buffer(&cMinor, &cOutToken)
 
 	if cGssDelegCred != C.GSS_C_NO_CREDENTIAL {
 		c.delegCred = &Credential{cGssDelegCred, g.CredUsageInitiateOnly, false}
@@ -181,7 +204,7 @@ func (c *SecContext) acceptSecContext(inputToken []byte) ([]byte, g.SecContextIn
 	if cOutToken != C.gss_empty_buffer {
 		outToken = C.GoBytes(cOutToken.value, C.int(cOutToken.length))
 	}
-	c.continueNeeded = (major & C.GSS_S_CONTINUE_NEEDED) != 0
+	c.continueNeeded = (cMajor & C.GSS_S_CONTINUE_NEEDED) != 0
 	c.id = cGssCtxID
 	c.acceptorName = nameFromGssInternal(cSrcAcceptorName)
 	info := g.SecContextInfoPartial{}
@@ -189,15 +212,15 @@ func (c *SecContext) acceptSecContext(inputToken []byte) ([]byte, g.SecContextIn
 }
 
 func (provider) ImportSecContext(token []byte) (g.SecContext, error) {
-	var minor C.OM_uint32
+	var cMinor C.OM_uint32
 	var cGssCtxID C.gss_ctx_id_t = C.GSS_C_NO_CONTEXT
 
 	cToken, pinner := bytesToCBuffer(token, nil)
 	defer pinner.Unpin()
 
-	major := C.gss_import_sec_context(&minor, &cToken, &cGssCtxID)
-	if major != C.GSS_S_COMPLETE {
-		return nil, makeStatus(major, minor)
+	cMajor := C.gss_import_sec_context(&cMinor, &cToken, &cGssCtxID)
+	if cMajor != C.GSS_S_COMPLETE {
+		return nil, makeStatus(cMajor, cMinor)
 	}
 
 	return &SecContext{
@@ -220,7 +243,7 @@ func (c *SecContext) Continue(inputToken []byte) ([]byte, g.SecContextInfoPartia
 
 	// otherwise continue establishing the context..
 	//
-	var major, minor C.OM_uint32
+	var cMajor, cMinor C.OM_uint32
 	var cOutToken C.gss_buffer_desc = C.gss_empty_buffer // cOutToken.value allocated by GSSAPI; released by *1
 	cInputToken, pinner := bytesToCBuffer(inputToken, nil)
 	defer pinner.Unpin()
@@ -232,24 +255,24 @@ func (c *SecContext) Continue(inputToken []byte) ([]byte, g.SecContextInfoPartia
 	cMechOid, pinner := oid2Coid(mech, pinner)
 
 	if c.isInitiator {
-		major = C.gss_init_sec_context(&minor, C.GSS_C_NO_CREDENTIAL, &c.id, c.initiatorName.name, cMechOid, 0, 0, nil, &cInputToken, nil, &cOutToken, nil, nil)
+		cMajor = C.gss_init_sec_context(&cMinor, C.GSS_C_NO_CREDENTIAL, &c.id, c.initiatorName.name, cMechOid, 0, 0, nil, &cInputToken, nil, &cOutToken, nil, nil)
 	} else {
-		major = C.gss_accept_sec_context(&minor, &c.id, C.GSS_C_NO_CREDENTIAL, &cInputToken, nil, nil, nil, &cOutToken, nil, nil, nil)
+		cMajor = C.gss_accept_sec_context(&cMinor, &c.id, C.GSS_C_NO_CREDENTIAL, &cInputToken, nil, nil, nil, &cOutToken, nil, nil, nil)
 	}
 
-	if major != C.GSS_S_COMPLETE && major != C.GSS_S_CONTINUE_NEEDED {
-		return nil, info, makeStatus(major, minor)
+	if cMajor != C.GSS_S_COMPLETE && cMajor != C.GSS_S_CONTINUE_NEEDED {
+		return nil, info, makeStatus(cMajor, cMinor)
 	}
 
 	// *1  release GSSAPI allocated buffer
-	defer C.gss_release_buffer(&minor, &cOutToken)
+	defer C.gss_release_buffer(&cMinor, &cOutToken)
 
 	var outToken []byte = nil
 	if cOutToken != C.gss_empty_buffer {
 		outToken = C.GoBytes(cOutToken.value, C.int(cOutToken.length))
 	}
 
-	c.continueNeeded = major == C.GSS_S_CONTINUE_NEEDED
+	c.continueNeeded = cMajor == C.GSS_S_CONTINUE_NEEDED
 	return outToken, info, nil
 }
 
@@ -285,39 +308,39 @@ func (c *SecContext) Delete() ([]byte, error) {
 	if c.id == nil {
 		return nil, nil
 	}
-	var minor C.OM_uint32
+	var cMinor C.OM_uint32
 	var cOutToken C.gss_buffer_desc = C.gss_empty_buffer // allocated by GSSAPI;  released by *1
-	major := C.gss_delete_sec_context(&minor, &c.id, &cOutToken)
+	cMajor := C.gss_delete_sec_context(&cMinor, &c.id, &cOutToken)
 
 	// *1   Release GSSAPI allocated buffer
-	defer C.gss_release_buffer(&minor, &cOutToken)
+	defer C.gss_release_buffer(&cMinor, &cOutToken)
 
 	c.id = nil
 	outToken := C.GoBytes(cOutToken.value, C.int(cOutToken.length))
 
-	return outToken, makeStatus(major, minor)
+	return outToken, makeStatus(cMajor, cMinor)
 }
 
 // ProcessToken is used to process error tokens from the peero.  No idea how to test this!
 func (c *SecContext) ProcessToken(token []byte) error {
-	var minor C.OM_uint32
+	var cMinor C.OM_uint32
 	cInputToken, pinner := bytesToCBuffer(token, nil)
 	defer pinner.Unpin()
 
-	major := C.gss_process_context_token(&minor, c.id, &cInputToken)
-	if major != C.GSS_S_COMPLETE {
-		return makeStatus(major, minor)
+	cMajor := C.gss_process_context_token(&cMinor, c.id, &cInputToken)
+	if cMajor != C.GSS_S_COMPLETE {
+		return makeStatus(cMajor, cMinor)
 	}
 
 	return nil
 }
 
 func (c *SecContext) ExpiresAt() (*g.GssLifetime, error) {
-	var minor C.OM_uint32
+	var cMinor C.OM_uint32
 	var cTimeRec C.OM_uint32
-	major := C.gss_context_time(&minor, c.id, &cTimeRec)
-	if major != C.GSS_S_COMPLETE {
-		return nil, makeStatus(major, minor)
+	cMajor := C.gss_context_time(&cMinor, c.id, &cTimeRec)
+	if cMajor != C.GSS_S_COMPLETE {
+		return nil, makeStatus(cMajor, cMinor)
 	}
 
 	lifetime := timeRecToGssLifetime(cTimeRec)
@@ -344,15 +367,15 @@ func (c *SecContext) Inquire() (*g.SecContextInfo, error) {
 		return nil, g.ErrNoContext
 	}
 
-	var minor C.OM_uint32
+	var cMinor C.OM_uint32
 	var cSrcName, cTargName C.gss_name_t = C.GSS_C_NO_NAME, C.GSS_C_NO_NAME // allocated by GSSAPI;  released by SecContext.Delete()
 	var cLifetime, cFlags C.OM_uint32
 	var cMechOid C.gss_OID = C.GSS_C_NO_OID // do not free, pointer to static value returned
 	var cLocallyInitiated, cOpen C.int
-	major := C.gss_inquire_context(&minor, c.id, &cSrcName, &cTargName, &cLifetime, &cMechOid, &cFlags, &cLocallyInitiated, &cOpen)
+	cMajor := C.gss_inquire_context(&cMinor, c.id, &cSrcName, &cTargName, &cLifetime, &cMechOid, &cFlags, &cLocallyInitiated, &cOpen)
 
-	if major != C.GSS_S_COMPLETE {
-		return nil, makeStatus(major, minor)
+	if cMajor != C.GSS_S_COMPLETE {
+		return nil, makeStatus(cMajor, cMinor)
 	}
 
 	// It is convenient to replace the initiator/acceptor names stored on the SecConext because those
@@ -401,7 +424,7 @@ func (c *SecContext) Inquire() (*g.SecContextInfo, error) {
 }
 
 func (c *SecContext) WrapSizeLimit(confRequired bool, maxWrapSize uint, qop g.QoP) (uint, error) {
-	var minor C.OM_uint32
+	var cMinor C.OM_uint32
 	var cConfReq C.int
 	var cMaxInputSize C.OM_uint32
 
@@ -417,9 +440,9 @@ func (c *SecContext) WrapSizeLimit(confRequired bool, maxWrapSize uint, qop g.Qo
 		cConfReq = 1
 	}
 
-	major := C.gss_wrap_size_limit(&minor, c.id, cConfReq, C.gss_qop_t(qop), C.OM_uint32(maxWrapSize), &cMaxInputSize)
-	if major != C.GSS_S_COMPLETE {
-		return 0, makeStatus(major, minor)
+	cMajor := C.gss_wrap_size_limit(&cMinor, c.id, cConfReq, C.gss_qop_t(qop), C.OM_uint32(maxWrapSize), &cMaxInputSize)
+	if cMajor != C.GSS_S_COMPLETE {
+		return 0, makeStatus(cMajor, cMinor)
 	}
 
 	// conversion is safe -- uint is either 32 or 64 bits here but cMaxInputSize is always 32 bit
@@ -427,14 +450,14 @@ func (c *SecContext) WrapSizeLimit(confRequired bool, maxWrapSize uint, qop g.Qo
 }
 
 func (c *SecContext) Export() ([]byte, error) {
-	var minor C.OM_uint32
+	var cMinor C.OM_uint32
 	var cToken C.gss_buffer_desc = C.gss_empty_buffer // allocated by GSSAPI;  released by *1
-	major := C.gss_export_sec_context(&minor, &c.id, &cToken)
-	if major != 0 {
-		return nil, makeStatus(major, minor)
+	cMajor := C.gss_export_sec_context(&cMinor, &c.id, &cToken)
+	if cMajor != 0 {
+		return nil, makeStatus(cMajor, cMinor)
 	}
 
-	defer C.gss_release_buffer(&minor, &cToken) // *1  Release GSSAPI allocated buffer
+	defer C.gss_release_buffer(&cMinor, &cToken) // *1  Release GSSAPI allocated buffer
 
 	// At this point the original security context has been deallocated and is no
 	// longer valid
@@ -456,19 +479,19 @@ func (c *SecContext) Wrap(msgIn []byte, confReq bool, qop g.QoP) ([]byte, bool, 
 	cInputMessage, pinner := bytesToCBuffer(msgIn, nil)
 	defer pinner.Unpin()
 
-	var minor C.OM_uint32
+	var cMinor C.OM_uint32
 	var cConfReq, cConfState C.int
 	var cOutputMessage C.gss_buffer_desc = C.gss_empty_buffer // allocated by GSSAPI;  released by *1
 	if confReq {
 		cConfReq = 1
 	}
 
-	major := C.gss_wrap(&minor, c.id, cConfReq, C.gss_qop_t(qop), &cInputMessage, &cConfState, &cOutputMessage)
-	if major != C.GSS_S_COMPLETE {
-		return nil, false, makeStatus(major, minor)
+	cMajor := C.gss_wrap(&cMinor, c.id, cConfReq, C.gss_qop_t(qop), &cInputMessage, &cConfState, &cOutputMessage)
+	if cMajor != C.GSS_S_COMPLETE {
+		return nil, false, makeStatus(cMajor, cMinor)
 	}
 
-	defer C.gss_release_buffer(&minor, &cOutputMessage) // *1  Release GSSAPI allocated buffer
+	defer C.gss_release_buffer(&cMinor, &cOutputMessage) // *1  Release GSSAPI allocated buffer
 
 	msgOut := C.GoBytes(cOutputMessage.value, C.int(cOutputMessage.length))
 	return msgOut, cConfState != 0, nil
@@ -483,17 +506,17 @@ func (c *SecContext) Unwrap(msgIn []byte) ([]byte, bool, g.QoP, error) {
 	cInputMessage, pinner := bytesToCBuffer(msgIn, nil)
 	defer pinner.Unpin()
 
-	var minor C.OM_uint32
+	var cMinor C.OM_uint32
 	var cConfState C.int
 	var cOutputMessage C.gss_buffer_desc = C.gss_empty_buffer // allocated by GSSAPI;  released by *1
 	var cQoP C.gss_qop_t
 
-	major := C.gss_unwrap(&minor, c.id, &cInputMessage, &cOutputMessage, &cConfState, &cQoP)
-	if major != 0 {
-		return nil, false, 0, makeStatus(major, minor)
+	cMajor := C.gss_unwrap(&cMinor, c.id, &cInputMessage, &cOutputMessage, &cConfState, &cQoP)
+	if cMajor != 0 {
+		return nil, false, 0, makeStatus(cMajor, cMinor)
 	}
 
-	defer C.gss_release_buffer(&minor, &cOutputMessage) // *1  Release GSSAPI allocated buffer
+	defer C.gss_release_buffer(&cMinor, &cOutputMessage) // *1  Release GSSAPI allocated buffer
 
 	msgOut := C.GoBytes(cOutputMessage.value, C.int(cOutputMessage.length))
 	return msgOut, cConfState != 0, g.QoP(cQoP), nil
@@ -511,14 +534,14 @@ func (c *SecContext) GetMIC(msg []byte, qop g.QoP) ([]byte, error) {
 	cMessage, pinner := bytesToCBuffer(msg, nil)
 	defer pinner.Unpin()
 
-	var minor C.OM_uint32
+	var cMinor C.OM_uint32
 	var cMsgToken C.gss_buffer_desc = C.gss_empty_buffer // allocated by GSSAPI;  released by *1
-	major := C.gss_get_mic(&minor, c.id, C.gss_qop_t(qop), &cMessage, &cMsgToken)
-	if major != 0 {
-		return nil, makeStatus(major, minor)
+	cMajor := C.gss_get_mic(&cMinor, c.id, C.gss_qop_t(qop), &cMessage, &cMsgToken)
+	if cMajor != 0 {
+		return nil, makeStatus(cMajor, cMinor)
 	}
 
-	defer C.gss_release_buffer(&minor, &cMsgToken) // *1  Release GSSAPI allocated buffer
+	defer C.gss_release_buffer(&cMinor, &cMsgToken) // *1  Release GSSAPI allocated buffer
 
 	token := C.GoBytes(cMsgToken.value, C.int(cMsgToken.length))
 	return token, nil
@@ -534,8 +557,8 @@ func (c *SecContext) VerifyMIC(msg, token []byte) (g.QoP, error) {
 	defer pinner.Unpin()
 	cToken, pinner := bytesToCBuffer(token, pinner)
 
-	var minor C.OM_uint32
+	var cMinor C.OM_uint32
 	var cQoP C.gss_qop_t
-	major := C.gss_verify_mic(&minor, c.id, &cMessage, &cToken, &cQoP)
-	return g.QoP(cQoP), makeStatus(major, minor)
+	cMajor := C.gss_verify_mic(&cMinor, c.id, &cMessage, &cToken, &cQoP)
+	return g.QoP(cQoP), makeStatus(cMajor, cMinor)
 }

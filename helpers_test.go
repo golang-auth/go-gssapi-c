@@ -20,19 +20,35 @@ func TestGssOidSetFromOids(t *testing.T) {
 	}
 	assert.Nil(oidSet)
 
-	// Test with one OID
-	oids = append(oids, []byte{1, 2, 3, 4, 5})
+	mechs := []g.GssMech{g.GSS_MECH_KRB5, g.GSS_MECH_IAKERB}
+
+	// Test with some OIDs
+	oids = append(oids, mechs[0].Oid(), mechs[1].Oid())
 	oidSet, pinner = gssOidSetFromOids(oids, nil)
 	assert.NotNil(oidSet)
 	assert.NotNil(pinner)
+	if oidSet != nil {
+		assert.Equal(2, int(oidSet.count))
+
+		elms := oidSet.elements
+		s := unsafe.Slice(elms, oidSet.count)
+		for i, cOid := range s {
+			oid := oidFromGssOid(&cOid)
+			oidString, err := oid2String(oid)
+			assert.NoErrorFatal(err)
+			assert.Equal(mechs[i].OidString(), oidString)
+		}
+	}
 	if pinner != nil {
 		pinner.Unpin()
 	}
-	assert.Equal(1, int(oidSet.count))
+}
 
-	cOid := oidSet.elements
-	for i := 0; i < int(cOid.length); i++ {
-		var b *byte = (*byte)(unsafe.Add(cOid.elements, i))
-		t.Logf("IDX %d: %d", i, *b)
-	}
+func TestOid2String(t *testing.T) {
+	assert := NewAssert(t)
+
+	oid := g.GSS_MECH_KRB5.Oid()
+	oidString, err := oid2String(oid)
+	assert.NoError(err)
+	assert.Equal(g.GSS_MECH_KRB5.OidString(), oidString)
 }
