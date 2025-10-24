@@ -140,13 +140,14 @@ func (c *SecContext) initSecContext() ([]byte, g.SecContextInfoPartial, error) {
 	ctxFlags, protFlag, transFlag := splitFlags(cRetFlags)
 
 	info := g.SecContextInfoPartial{
-		InitiatorName:    c.initiatorName,
-		Flags:            ctxFlags,
-		ExpiresAt:        timeRecToGssLifetime(cTimeRec),
-		LocallyInitiated: c.isInitiator,
-		FullyEstablished: !c.continueNeeded,
-		ProtectionReady:  protFlag,
-		Transferrable:    transFlag,
+		InitiatorName:       c.initiatorName,
+		Flags:               ctxFlags,
+		ExpiresAt:           timeRecToGssLifetime(cTimeRec),
+		LocallyInitiated:    c.isInitiator,
+		FullyEstablished:    !c.continueNeeded,
+		ProtectionReady:     protFlag,
+		Transferrable:       transFlag,
+		DelegatedCredential: nil,
 	}
 	if cActualMech != C.GSS_C_NO_OID {
 		mech, err := g.MechFromOid(oidFromGssOid(cActualMech))
@@ -217,13 +218,14 @@ func (c *SecContext) acceptSecContext(inputToken []byte) ([]byte, g.SecContextIn
 	ctxFlags, protFlag, transFlag := splitFlags(cRetFlags)
 
 	info := g.SecContextInfoPartial{
-		InitiatorName:    c.initiatorName,
-		Flags:            ctxFlags,
-		ExpiresAt:        timeRecToGssLifetime(cTimeRec),
-		LocallyInitiated: c.isInitiator,
-		FullyEstablished: !c.continueNeeded,
-		ProtectionReady:  protFlag,
-		Transferrable:    transFlag,
+		InitiatorName:       c.initiatorName,
+		Flags:               ctxFlags,
+		ExpiresAt:           timeRecToGssLifetime(cTimeRec),
+		LocallyInitiated:    c.isInitiator,
+		FullyEstablished:    !c.continueNeeded,
+		ProtectionReady:     protFlag,
+		Transferrable:       transFlag,
+		DelegatedCredential: c.delegCred,
 	}
 	if cActualMech != C.GSS_C_NO_OID {
 		mech, err := g.MechFromOid(oidFromGssOid(cActualMech))
@@ -320,13 +322,14 @@ func (c *SecContext) Continue(inputToken []byte) ([]byte, g.SecContextInfoPartia
 	ctxFlags, protFlag, transFlag := splitFlags(cRetFlags)
 
 	info := g.SecContextInfoPartial{
-		InitiatorName:    c.initiatorName,
-		Flags:            ctxFlags,
-		ExpiresAt:        timeRecToGssLifetime(cTimeRec),
-		LocallyInitiated: c.isInitiator,
-		FullyEstablished: !c.continueNeeded,
-		ProtectionReady:  protFlag,
-		Transferrable:    transFlag,
+		InitiatorName:       c.initiatorName,
+		Flags:               ctxFlags,
+		ExpiresAt:           timeRecToGssLifetime(cTimeRec),
+		LocallyInitiated:    c.isInitiator,
+		FullyEstablished:    !c.continueNeeded,
+		ProtectionReady:     protFlag,
+		Transferrable:       transFlag,
+		DelegatedCredential: c.delegCred,
 	}
 	if cActualMech != C.GSS_C_NO_OID {
 		mech, err := g.MechFromOid(oidFromGssOid(cActualMech))
