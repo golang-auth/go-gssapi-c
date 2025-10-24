@@ -20,16 +20,16 @@ import (
 
 // Convert a Go OID to a string
 func oid2String(oid g.Oid) (string, error) {
-	objId := make(asn1.ObjectIdentifier, 100)
+	objID := make(asn1.ObjectIdentifier, 100)
 
 	oid = append([]byte{0x06, byte(len(oid))}, oid...)
-	_, err := asn1.Unmarshal(oid, &objId)
+	_, err := asn1.Unmarshal(oid, &objID)
 	if err != nil {
 		return "", err
 	}
 
 	var s strings.Builder
-	for i, o := range objId {
+	for i, o := range objID {
 		if i > 0 {
 			s.WriteString(".")
 		}

@@ -201,7 +201,7 @@ func (c *Credential) Add(name g.GssName, mech g.GssMech, usage g.CredUsage, init
 	var cMechOid C.gss_OID = C.GSS_C_NO_OID
 	pinner := &runtime.Pinner{}
 	if mech != nil {
-		cMechOid, pinner = oid2Coid(mech.Oid(), pinner)
+		cMechOid, _ = oid2Coid(mech.Oid(), pinner)
 	}
 
 	var cGssName C.gss_name_t = C.GSS_C_NO_NAME

@@ -114,7 +114,7 @@ func (c *SecContext) initSecContext() ([]byte, g.SecContextInfoPartial, error) {
 
 	var cChBindings C.gss_channel_bindings_t = C.GSS_C_NO_CHANNEL_BINDINGS
 	if c.initOptions.ChannelBinding != nil {
-		cChBindings, pinner = mkChannelBindings(c.initOptions.ChannelBinding, pinner)
+		cChBindings, _ = mkChannelBindings(c.initOptions.ChannelBinding, pinner)
 	}
 
 	var cMinor, cRetFlags, cTimeRec C.OM_uint32
@@ -193,7 +193,7 @@ func (c *SecContext) acceptSecContext(inputToken []byte) ([]byte, g.SecContextIn
 	var cGssCtxID C.gss_ctx_id_t = C.GSS_C_NO_CONTEXT
 	var cOutToken C.gss_buffer_desc = C.gss_empty_buffer // cOutToken.value allocated by GSSAPI; released by *1
 	var cActualMech C.gss_OID = C.GSS_C_NO_OID
-	cInputToken, pinner := bytesToCBuffer(inputToken, pinner)
+	cInputToken, _ := bytesToCBuffer(inputToken, pinner)
 
 	cMajor := C.gss_accept_sec_context(&cMinor, &cGssCtxID, cGssAcceptorCred, &cInputToken, cChBindings, &cInitiatorName, &cActualMech, &cOutToken, &cRetFlags, &cTimeRec, &cGssDelegCred)
 	if cMajor != C.GSS_S_COMPLETE && cMajor != C.GSS_S_CONTINUE_NEEDED {
@@ -280,7 +280,7 @@ func (c *SecContext) Continue(inputToken []byte) ([]byte, g.SecContextInfoPartia
 	if c.mech != nil {
 		mech = c.mech.Oid()
 	}
-	cMechOid, pinner := oid2Coid(mech, pinner)
+	cMechOid, _ := oid2Coid(mech, pinner)
 
 	if c.isInitiator {
 		cMajor = C.gss_init_sec_context(&cMinor, C.GSS_C_NO_CREDENTIAL, &c.id, c.initiatorName.name, cMechOid, 0, 0, nil, &cInputToken, &cActualMech, &cOutToken, &cRetFlags, &cTimeRec)
@@ -621,7 +621,7 @@ func (c *SecContext) VerifyMIC(msg, token []byte) (g.QoP, error) {
 
 	cMessage, pinner := bytesToCBuffer(msg, nil)
 	defer pinner.Unpin()
-	cToken, pinner := bytesToCBuffer(token, pinner)
+	cToken, _ := bytesToCBuffer(token, pinner)
 
 	var cMinor C.OM_uint32
 	var cQoP C.gss_qop_t
