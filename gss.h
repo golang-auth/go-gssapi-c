@@ -41,3 +41,4 @@ typedef struct gss_buffer_set_desc_struct {
 extern gss_buffer_desc gss_empty_buffer;
 extern int has_channel_bound();
 extern int is_mac_framework();
+
