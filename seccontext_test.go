@@ -451,7 +451,7 @@ func TestChannelBindings(t *testing.T) {
 	}
 
 	// Channel bindings seem to be broken on MacOS Kerberos
-	if !isHeimdalMac() {
+	if !isMacGssapi() {
 		tests = append(tests, testData{
 			// both sides set non-matching bindings: expect an error and don't expect ContextFlagChannelBound return flag to be set
 			"mismatch-bindings", &cb1, &cb2, g.ErrBadBindings, false,

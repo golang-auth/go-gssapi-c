@@ -196,7 +196,7 @@ func (c *SecContext) acceptSecContext(inputToken []byte) ([]byte, g.SecContextIn
 	cInputToken, _ := bytesToCBuffer(inputToken, pinner)
 
 	cMajor := C.gss_accept_sec_context(&cMinor, &cGssCtxID, cGssAcceptorCred, &cInputToken, cChBindings, &cInitiatorName, &cActualMech, &cOutToken, &cRetFlags, &cTimeRec, &cGssDelegCred)
-	if cMajor != C.GSS_S_COMPLETE && cMajor != C.GSS_S_CONTINUE_NEEDED {
+	if cMajor != C.GSS_S_COMPLETE && (cMajor&C.GSS_S_CONTINUE_NEEDED) == 0 {
 		return nil, g.SecContextInfoPartial{}, makeStatus(cMajor, cMinor)
 	}
 
@@ -211,7 +211,7 @@ func (c *SecContext) acceptSecContext(inputToken []byte) ([]byte, g.SecContextIn
 	if cOutToken != C.gss_empty_buffer {
 		outToken = C.GoBytes(cOutToken.value, C.int(cOutToken.length))
 	}
-	c.continueNeeded = (cMajor & C.GSS_S_CONTINUE_NEEDED) != 0
+	c.continueNeeded = (cMajor & C.GSS_S_CONTINUE_NEEDED) > 0
 	c.id = cGssCtxID
 	c.initiatorName = nameFromGssInternal(cInitiatorName)
 
@@ -317,7 +317,7 @@ func (c *SecContext) Continue(inputToken []byte) ([]byte, g.SecContextInfoPartia
 	if cOutToken != C.gss_empty_buffer {
 		outToken = C.GoBytes(cOutToken.value, C.int(cOutToken.length))
 	}
-	c.continueNeeded = cMajor == C.GSS_S_CONTINUE_NEEDED
+	c.continueNeeded = cMajor&C.GSS_S_CONTINUE_NEEDED > 0
 
 	ctxFlags, protFlag, transFlag := splitFlags(cRetFlags)
 
@@ -460,7 +460,7 @@ func (c *SecContext) Inquire() (*g.SecContextInfo, error) {
 	oid := oidFromGssOid(cMechOid)
 	mech, err := g.MechFromOid(oid)
 	if err != nil {
-		if cMechOid == C.GSS_C_NO_OID && isHeimdalMac() {
+		if cMechOid == C.GSS_C_NO_OID && isMacGssapi() {
 			mech = g.GSS_MECH_KRB5
 		} else {
 			return nil, err

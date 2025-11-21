@@ -66,10 +66,13 @@ func hasChannelBound() bool {
 	return C.has_channel_bound() == 1
 }
 
-func isHeimdalMac() bool {
+// Is this Mac Kerberos?
+func isMacGssapi() bool {
 	return C.is_mac_framework() == 1
 }
 
+// Is this the ancient Heimdal that is part of the FreeBSD base system
+// before FreeBSD 15?
 func isHeimdalFreeBSD() bool {
 	return isHeimdalBefore7() && runtime.GOOS == "freebsd"
 }
@@ -84,8 +87,9 @@ func (p *provider) HasExtension(e g.GssapiExtension) bool {
 	case g.HasExtLocalname:
 		return hasSymbol("gss_localname")
 	case g.HasExtKrb5Identity:
-		return (hasSymbol("krb5_gss_register_acceptor_identity") ||
-			hasSymbol("gsskrb5_register_acceptor_identity")) &&
-			hasSymbol("krb5_cc_set_default_name")
+		// It is not feasible to support gsskrb5_register_acceptor_identity / krb5_cc_set_default_name
+		// because they set thread local values which cannot work with Go which moves its goroutines to
+		// different threads.
+		return false
 	}
 }
