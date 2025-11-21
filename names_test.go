@@ -124,7 +124,7 @@ func TestInquireMechsForName(t *testing.T) {
 			{"foo@bar.com", g.GSS_KRB5_NT_PRINCIPAL_NAME, false, 2},
 		}
 
-	case isHeimdalMac():
+	case isMacGssapi():
 		tests = []testInfo{
 			{"", g.GSS_NT_ANONYMOUS, false, 0},
 			{"foo", g.GSS_NT_HOSTBASED_SERVICE, false, 3},
