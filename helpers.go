@@ -52,38 +52,6 @@ func oidsFromGssOidSet(oidSet C.gss_OID_set) []g.Oid {
 	return ret
 }
 
-// Convert from a slice of OID object to a set of C OIDS (see below)
-func gssOidSetFromOids(oids []g.Oid, pinner *runtime.Pinner) (C.gss_OID_set, *runtime.Pinner) {
-	if pinner == nil {
-		pinner = &runtime.Pinner{}
-	}
-
-	if len(oids) == 0 {
-		return nil, pinner
-	}
-
-	// Create a Go slice containing the C gss_OID elements, which is gauranteed to be
-	// contiguous, and suitable for use as a C array
-	oidPtrs := make([]C.gss_OID, len(oids))
-
-	// All the OID pointers will be pinned after this loop
-	for i, oid := range oids {
-		// oid2Coid will pin memory pointed to by gss_OID.elements
-		oidPtrs[i], pinner = oid2Coid(oid, pinner)
-
-		// but we also need to pin the gss_OID struct itself because its a member
-		// of gss_OID_set
-		pinner.Pin(oidPtrs[i])
-	}
-
-	cOidSet := C.gss_OID_set_desc{
-		count:    C.size_t(len(oids)),
-		elements: oidPtrs[0],
-	}
-
-	return &cOidSet, pinner
-}
-
 // Convert Go GSSAPI interface mech names to a set of mech OIDs
 func mechsToOids(mechs []g.GssMech) []g.Oid {
 	ret := make([]g.Oid, len(mechs))

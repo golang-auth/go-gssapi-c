@@ -17,6 +17,10 @@ import (
 import "C"
 
 func oidFromGssOid(cOid C.gss_OID) g.Oid {
+	if cOid == C.GSS_C_NO_OID {
+		return nil
+	}
+
 	return C.GoBytes(cOid.elements, C.int(cOid.length))
 }
 
@@ -30,10 +34,12 @@ func oid2Coid(oid g.Oid, pinner *runtime.Pinner) (C.gss_OID, *runtime.Pinner) {
 	}
 
 	if len(oid) > 0 {
+		p := unsafe.Pointer(&oid[0])
 		pinner.Pin(&oid[0])
+
 		return &C.gss_OID_desc{
 			length:   C.OM_uint32(len(oid)),
-			elements: unsafe.Pointer(&oid[0]),
+			elements: p,
 		}, pinner
 	} else {
 		return C.GSS_C_NO_OID, pinner

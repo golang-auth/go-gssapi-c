@@ -45,6 +45,8 @@ func oid2Coid(oid g.Oid, pinner *runtime.Pinner) (C.gss_OID, *runtime.Pinner) {
 	if len(oid) > 0 {
 		pinner.Pin(&oid[0])
 		var cOid C.gss_OID_desc
+
+		// Go doesn't know about the elements field of the gss_OID_desc struct due to alignment issues
 		C._set_oid_fields(&cOid, C.OM_uint32(len(oid)), unsafe.Pointer(&oid[0]))
 		return &cOid, pinner
 	} else {

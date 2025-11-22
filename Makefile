@@ -1,9 +1,8 @@
 current_dir := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 GO          ?= go
-TOOLBIN := $(current_dir)/toolbin
-
-src_dir = $(current_dir)
-
+GOOS 		?= $(shell $(GO) env GOOS)
+GOARCH 		?= $(shell $(GO) env GOARCH)
+TOOLBIN 	:= $(current_dir)/toolbin/$(GOOS)_$(GOARCH)
 
 .DEFAULT: build
 
@@ -12,38 +11,40 @@ build: generate
 	./scripts/gofmt
 
 .PHONY: generate
-generate: $(src_dir)/testvecs_test.go
+generate: testvecs_test.go
 
-$(src_dir)/testvecs_test.go: build-tools/mk-test-vectors
-	$(GO) generate $(src_dir)/common_test.go
+testvecs_test.go: build-tools/mk-test-vectors
+	$(GO) generate common_test.go
 
+PKGS = $(shell $(GO) list ./... | egrep -v '/examples/|/build-tools/')
 
 .PHONY: test
-test:
-	./scripts/gofmt
-	${GO} test -asan ./... -coverprofile=cover.out -covermode=atomic
-	${GO} tool cover -html=cover.out -o coverage.html
+test: $(TOOLBIN)/gocovmerge $(TOOLBIN)/go-test-coverage
+	@echo "==> check code formatting"
+	@./scripts/gofmt
+	@echo "==> run tests for " $(PKGS)
+	@${GO} test $(PKGS) -coverprofile=cover.out -covermode=atomic
+	@go tool cover -html=cover.out -o coverage.html
+	@$(TOOLBIN)/go-test-coverage --config .testcoverage.yml
+
+.PHONY: lint
+lint: | $(TOOLBIN)/golangci-lint
+	$(TOOLBIN)/golangci-lint run 
+
+.PHONY: tools
+tools: $(TOOLBIN)/golangci-lint $(TOOLBIN)/gocovmerge $(TOOLBIN)/go-test-coverage
+	@echo "==> installing required tooling..."
+
+$(TOOLBIN)/golangci-lint:
+	GOBIN=$(TOOLBIN) GO111MODULE=on $(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@v1
+
+$(TOOLBIN)/gocovmerge:
+	GOBIN=$(TOOLBIN) GO111MODULE=on $(GO) install github.com/wadey/gocovmerge@latest
+
+$(TOOLBIN)/go-test-coverage:
+	GOBIN=$(TOOLBIN) GO111MODULE=on $(GO) install github.com/vladopajic/go-test-coverage/v2@latest
 
 .PHONY: gdb
 gdb:
 	GO_CFLAGS="-g" $(GO) test -c  -timeout 30s
 	gdb ./go-gssapi-c.test
-
-.PHONY: lint
-lint: | $(TOOLBIN)/golangci-lint $(TOOLBIN)/staticcheck
-	@echo ------ golangci-lint
-	@echo ------
-	$(TOOLBIN)/golangci-lint run
-	@echo -e "\n------ staticcheck"
-	@echo ------
-	$(TOOLBIN)/staticcheck 
-
-.PHONY: tools
-tools: $(TOOLBIN)/golangci-lint $(TOOLBIN)/staticcheck
-	@echo "==> installing required tooling..."
-
-$(TOOLBIN)/golangci-lint: | $(GOENV)
-	GOBIN=$(TOOLBIN) GO111MODULE=on $(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2
-
-$(TOOLBIN)/staticcheck: ~$(GOENV)
-	GOBIN=$(TOOLBIN) GO111MODULE=on $(GO) install honnef.co/go/tools/cmd/staticcheck@2025.1.1
