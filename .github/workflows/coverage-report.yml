@@ -34,6 +34,9 @@ jobs:
         uses: actions/setup-go@v5
         with:
             go-version: '1.22.x'
+      - name: Install Ubuntu upackages
+        run: |
+              sudo apt-get install -y krb5-user libkrb5-dev pkg-config
       - name: Generate test includes
         run: |
           echo pkgs=$(go list ./... | grep -v /examples/) >> "$GITHUB_ENV"
