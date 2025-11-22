@@ -106,6 +106,7 @@ jobs:
             PKGS="${PKGS} heimdal"
           fi
 
+          echo Installing packages: ${PKGS}
           pkg install -y ${PKGS}
 
         run: |

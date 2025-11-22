@@ -31,8 +31,11 @@ func hasDuplicateCred() bool {
 
 func (provider) AcquireCredential(name g.GssName, mechs []g.GssMech, usage g.CredUsage, lifetime *g.GssLifetime) (g.Credential, error) {
 	// turn the mechs into an array of OIDs
-	cOidSet, pinner := gssOidSetFromOids(mechsToOids(mechs), nil)
-	defer pinner.Unpin()
+	cOidSet, err := newOidSet(mechsToOids(mechs))
+	if err != nil {
+		return nil, err
+	}
+	defer cOidSet.Release() //nolint:errcheck
 
 	var cGssName C.gss_name_t = C.GSS_C_NO_NAME
 	if name != nil {
@@ -46,7 +49,7 @@ func (provider) AcquireCredential(name g.GssName, mechs []g.GssMech, usage g.Cre
 
 	var minor C.OM_uint32
 	var cCredID C.gss_cred_id_t = C.GSS_C_NO_CREDENTIAL
-	major := C.gss_acquire_cred(&minor, cGssName, gssLifetimeToSeconds(lifetime), cOidSet, C.int(usage), &cCredID, nil, nil)
+	major := C.gss_acquire_cred(&minor, cGssName, gssLifetimeToSeconds(lifetime), cOidSet.oidSet, C.int(usage), &cCredID, nil, nil)
 
 	if major != 0 {
 		return nil, makeStatus(major, minor)
