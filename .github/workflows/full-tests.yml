@@ -81,6 +81,9 @@ jobs:
         go-version: ['1.24.x', '1.25.x' ]
         krb5-version: ["base", "mit", "heimdal"]
         os-version: ["14.3", "15.0"]
+        exclude:
+          - os-version: "15.0"
+            krb5-version: "mit"
 
     runs-on: ubuntu-latest
 
@@ -121,6 +124,9 @@ jobs:
           if [ "${{ matrix.krb5-version }}" != "base" ]; then
             TAGS="-tags usepkgconfig"
           fi
+          if [ "${{ matrix.os-version }}" = "15.0" -a "${{ matrix.krb5-version }}" = "base" ]; then
+            TAGS="-tags usepkgconfig"
+          fi
 
           echo Using PATH $PATH
           echo Using go $(go version)
@@ -128,6 +134,7 @@ jobs:
           pkg-config -libs krb5-gssapi
           pkg-config -cflags krb5-gssapi
 
+          export OPENSSL_CONIF=./openssl-rc4.conf
           go test ${TAGS}
 
 
