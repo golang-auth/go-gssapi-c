@@ -111,6 +111,11 @@ jobs:
             PKGS="${PKGS} heimdal"
           fi
 
+          if [ "${{ matrix.os-version }}" = "15.0"  -a "${{ matrix.krb5-version }}" = "heimdal" ]; then
+            rm -f /etc/gss/mech
+            echo Working around FBSD/Heimdal port issue - removed /etc/gss/mech
+          fi
+
           echo Installing packages: ${PKGS}
           pkg install -y ${PKGS}
 
@@ -129,12 +134,13 @@ jobs:
           fi
 
           echo Using PATH $PATH
-          echo Using go $(go version)
+          echo Using go: $(go version)
           echo Kerberos package config:
           pkg-config -libs krb5-gssapi
           pkg-config -cflags krb5-gssapi
 
-          export OPENSSL_CONIF=./openssl-rc4.conf
+          export OPENSSL_CONF=./.openssl-rc4.conf
+          echo Using OPENSSL_CONF $OPENSSL_CONF
           go test ${TAGS}
 
 
