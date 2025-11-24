@@ -1,7 +1,13 @@
+ifeq ($(.CURDIR),)
+	current_dir  = $(shell /bin/pwd)
+else
+	current_dir  = $(.CURDIR)
+endif
+
 GO          ?= go
 GOOS 		?= $(shell $(GO) env GOOS)
 GOARCH 		?= $(shell $(GO) env GOARCH)
-TOOLBIN 	 = $(CURDIR)/toolbin/$(GOOS)_$(GOARCH)
+TOOLBIN 	 = $(.CURDIR)/toolbin/$(GOOS)_$(GOARCH)
 
 .DEFAULT: build
 
@@ -12,6 +18,10 @@ build: generate
 .PHONY: generate
 generate: testvecs_test.go
 
+.PHONY: x
+x:
+	echo THING is $(current_dir)
+
 testvecs_test.go: build-tools/mk-test-vectors
 	$(GO) generate common_test.go
 
@@ -20,7 +30,7 @@ PKGS = $(shell $(GO) list ./... | egrep -v '/examples/|/build-tools/')
 .PHONY: test
 test: $(TOOLBIN)/gocovmerge $(TOOLBIN)/go-test-coverage
 	@echo "==> check code formatting"
-	@sh ./scripts/gofmt
+	@./scripts/gofmt
 	@echo "==> run tests for " $(PKGS)
 	@${GO} test $(PKGS) -coverprofile=cover.out -covermode=atomic
 	@go tool cover -html=cover.out -o coverage.html

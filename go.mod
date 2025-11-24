@@ -3,7 +3,7 @@ module github.com/golang-auth/go-gssapi-c
 go 1.24
 
 require (
-	github.com/golang-auth/go-gssapi/v3 v3.0.0-beta2
+	github.com/golang-auth/go-gssapi/v3 v3.0.0-beta3
 	github.com/stretchr/testify v1.9.0
 )
 

@@ -225,7 +225,7 @@ func TestInquireCredentialAcceptor(t *testing.T) {
 
 	assert.Equal(g.CredUsageAcceptOnly, info.Usage)
 
-	if isHeimdalMac() {
+	if isMacGssapi() {
 		assert.ElementsMatch([]g.GssMech{g.GSS_MECH_KRB5}, info.Mechs)
 	} else {
 		assert.ElementsMatch([]g.GssMech{g.GSS_MECH_KRB5, g.GSS_MECH_SPNEGO}, info.Mechs)
@@ -251,7 +251,7 @@ func TestInquireCredential(t *testing.T) {
 
 	assert.Equal(g.CredUsageInitiateOnly, info.Usage)
 
-	if isHeimdalMac() {
+	if isMacGssapi() {
 		assert.ElementsMatch([]g.GssMech{g.GSS_MECH_KRB5}, info.Mechs)
 	} else {
 		assert.ElementsMatch([]g.GssMech{g.GSS_MECH_KRB5, g.GSS_MECH_SPNEGO}, info.Mechs)

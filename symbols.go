@@ -3,6 +3,7 @@
 package gssapi
 
 import (
+	"sync"
 	"unsafe"
 )
 
@@ -15,16 +16,13 @@ import "C"
 // Maps symbols that we look for in the binary to their addresses
 var optionalSymbols = make(map[string]unsafe.Pointer)
 
-func init() {
+// This runs once via sync.Once
+func readSymbols() {
 	// Look for these symbols in the binary
 	syms := []string{
 		"gss_localname",
 		"gss_duplicate_cred", // Signals rewrite of gss_add_cred
 		"gss_unwrap_aead",    // Appeared in Heimdal 7.0.1
-		"krb5_gss_register_acceptor_identity",
-		"gsskrb5_register_acceptor_identity",
-		"gss_krb5_ccache_name",
-		"gsskrb5_set_default_realm",
 		"krb5_is_thread_safe",
 		"gss_display_name",
 		"gss_inquire_name",
@@ -43,11 +41,15 @@ func init() {
 	}
 }
 
+var onceSymbols = sync.Once{}
+
 func hasSymbol(sym string) bool {
+	onceSymbols.Do(readSymbols)
 	return optionalSymbols[sym] != nil
 }
 
 func librarySymbol(sym string) unsafe.Pointer {
+	onceSymbols.Do(readSymbols)
 	return optionalSymbols[sym]
 }
 
