@@ -90,7 +90,7 @@ version will be used by the provider.
 | MacOS            | MIT                    | krb5                    | `/opt/homebrew/opt/krb5/lib/pkgconfig` | `usepkgconfig` |
 | MacOS            | Heimdal 7.8            | heimdal                 | `/opt/homebrew/opt/heimdal/lib/pkgconfig` | `usepkgconfig` |
 | FreeBSD          | FreeBSD Kerberos (prior to v15)      | n/a                     | n/a				 | n/a        |
-| FreeBSD          | FreeBSD Kerberos (from v15)      | n/a                     | n/a				 | `fbsdmit`        |
+| FreeBSD          | FreeBSD Kerberos (from v15)      | n/a                     | n/a				 | `usepkgconfig`        |
 | FreeBSD          | MIT (prior to v15)     | krb5, pkgconf           | n/a 			 | `usepkgconfig`       |
 | FreeBSD          | Heimdal 7.8            | heimdal, pkgconf        | n/a 			 | `usepkgconfig`        |
 | OpenBSD          | Heimdal 7.8            | heimdal                 | n/a              | n/a        |
@@ -132,4 +132,4 @@ both packages try to own the same pkg-config `.pc` files.
    ID.  We fudge it and return Kerberos.
 
 
-[gssapi-v3]: https://github.com/golang-auth/go-gssapi/v3
+[gssapi-v3]: https://github.com/golang-auth/go-gssapi/
