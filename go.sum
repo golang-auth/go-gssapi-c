@@ -8,6 +8,10 @@ github.com/golang-auth/go-gssapi/v3 v3.0.0-beta2 h1:zWwmsL5VnVit3Y3ZAc3KZ1W9umVP
 github.com/golang-auth/go-gssapi/v3 v3.0.0-beta2/go.mod h1:vHVvRIi6WZRK33JcFcXknTNbgLf8lVp4TvF/A42ofKM=
 github.com/golang-auth/go-gssapi/v3 v3.0.0-beta3 h1:+cS777KYQgLZVKftOlcg7leMZp4aKvdnV5P6nuL1N7g=
 github.com/golang-auth/go-gssapi/v3 v3.0.0-beta3/go.mod h1:+u7Et3aVXBmtTypREcIpdGH/UXG9Glx+4Na7CK5/1T0=
+github.com/golang-auth/go-gssapi/v3 v3.0.0-beta4 h1:w/9ZWj1dV8ntcdbIGzww84nK84upAGtCts58R7cJerg=
+github.com/golang-auth/go-gssapi/v3 v3.0.0-beta4/go.mod h1:+u7Et3aVXBmtTypREcIpdGH/UXG9Glx+4Na7CK5/1T0=
+github.com/golang-auth/go-gssapi/v3 v3.0.0-beta5 h1:2lrhQm6sNour6Md4Vf+fTShvsWVH8l4D88VhjLPnxH0=
+github.com/golang-auth/go-gssapi/v3 v3.0.0-beta5/go.mod h1:+u7Et3aVXBmtTypREcIpdGH/UXG9Glx+4Na7CK5/1T0=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/stretchr/testify v1.9.0 h1:HtqpIVDClZ4nwg75+f6Lvsy/wHu+3BoSGCbBAcpTsTg=

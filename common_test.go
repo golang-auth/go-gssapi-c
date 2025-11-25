@@ -4,6 +4,7 @@ package gssapi
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -27,7 +28,7 @@ func TestMain(m *testing.M) {
 	ta = mkTestAssets()
 	defer ta.Free()
 
-	fmt.Fprintf(os.Stderr, "isHeimdal: %v\n", isHeimdal())
+	fmt.Fprintf(os.Stderr, "isHeimdalBefore7: %v, isHeimdalAfter7: %v, isHeimdalFreeBSD: %v, isMacGssapi: %v\n", isHeimdalBefore7(), isHeimdalAfter7(), isHeimdalFreeBSD(), isMacGssapi())
 
 	ta.useAsset(nil, testCfg1)
 
@@ -71,18 +72,26 @@ type testAssets struct {
 	cfgfile1   string
 	cfgfile2   string
 	lib        g.Provider
+	tmpDir     string
 }
 
 func mkTestAssets() *testAssets {
+	// new provider
 	p, err := New()
 	if err != nil {
 		panic(err)
 	}
+
+	tmpDir, err := os.MkdirTemp("", "test")
+	if err != nil {
+		panic(err)
+	}
 	ta := &testAssets{
-		lib: p,
+		tmpDir: tmpDir,
+		lib:    p,
 	}
 
-	ktName, ktName1, krName2, ktNameAll, ccName, cc1, err := writeKrbCreds()
+	ktName, ktName1, krName2, ktNameAll, ccName, cc1, err := writeKrbCreds(ta.tmpDir)
 	if err != nil {
 		panic(err)
 	}
@@ -94,7 +103,7 @@ func mkTestAssets() *testAssets {
 	ta.ccfile = cc1
 	ta.ccName = ccName
 
-	cfName1, cfName2, err := writeKrb5Confs()
+	cfName1, cfName2, err := writeKrb5Confs(ta.tmpDir)
 	if err != nil {
 		panic(err)
 	}
@@ -117,6 +126,8 @@ func (ta *testAssets) Free() {
 	_ = os.Remove(ta.ktfileAll)
 	_ = os.Remove(ta.ccfile)
 	_ = os.Remove(ta.ccName)
+
+	_ = os.RemoveAll(ta.tmpDir)
 }
 
 type testAssetType int
@@ -173,6 +184,9 @@ func (ta *testAssets) useAsset(t *testing.T, at testAssetType) {
 		err = CopyFile(ta.ktfileRuin, ta.ktName)
 	case at&testNoKeytab > 0:
 		err = os.Remove(ta.ktName)
+		if errors.Is(err, os.ErrNotExist) {
+			err = nil
+		}
 	}
 
 	if err != nil {
@@ -213,16 +227,29 @@ func (ta *testAssets) useAsset(t *testing.T, at testAssetType) {
 	}
 }
 
-var ta *testAssets
-
-func writeTmpBase64(b64 string) (string, error) {
-	r := strings.NewReader(b64)
-	decoder := base64.NewDecoder(base64.StdEncoding, r)
-	return writeTmp(decoder)
+func (ta *testAssets) tmpFilename() string {
+	fh, err := os.CreateTemp(ta.tmpDir, "test")
+	if err != nil {
+		panic(err)
+	}
+	if err = fh.Chmod(0600); err != nil {
+		panic(err)
+	}
+	name := fh.Name()
+	fh.Close() //nolint:errcheck
+	return name
 }
 
-func writeTmp(r io.Reader) (string, error) {
-	fh, err := os.CreateTemp("", "test")
+var ta *testAssets
+
+func writeTmpBase64(tmpDir string, b64 string) (string, error) {
+	r := strings.NewReader(b64)
+	decoder := base64.NewDecoder(base64.StdEncoding, r)
+	return writeTmp(tmpDir, decoder)
+}
+
+func writeTmp(tmpDir string, r io.Reader) (string, error) {
+	fh, err := os.CreateTemp(tmpDir, "test")
 	if err != nil {
 		return "", err
 	}
@@ -239,26 +266,26 @@ func writeTmp(r io.Reader) (string, error) {
 	return fn, err
 }
 
-func writeKrbCreds() (ktName, kt1, kt2, ktAll, ccName, cc1 string, err error) {
-	kt1, err = writeTmpBase64(ktdata1)
+func writeKrbCreds(tmpDir string) (ktName, kt1, kt2, ktAll, ccName, cc1 string, err error) {
+	kt1, err = writeTmpBase64(tmpDir, ktdata1)
 	if err != nil {
 		return
 	}
-	kt2, err = writeTmpBase64(ktdata2)
+	kt2, err = writeTmpBase64(tmpDir, ktdata2)
 	if err != nil {
 		return
 	}
-	ktAll, err = writeTmpBase64(ktdataAll)
-	if err != nil {
-		return
-	}
-
-	cc1, err = writeTmpBase64(ccdata)
+	ktAll, err = writeTmpBase64(tmpDir, ktdataAll)
 	if err != nil {
 		return
 	}
 
-	fh, err := os.CreateTemp("", "test")
+	cc1, err = writeTmpBase64(tmpDir, ccdata)
+	if err != nil {
+		return
+	}
+
+	fh, err := os.CreateTemp(tmpDir, "test")
 	if err != nil {
 		return
 	}
@@ -268,7 +295,7 @@ func writeKrbCreds() (ktName, kt1, kt2, ktAll, ccName, cc1 string, err error) {
 		return
 	}
 
-	fh, err = os.CreateTemp("", "test")
+	fh, err = os.CreateTemp(tmpDir, "test")
 	if err != nil {
 		return
 	}
@@ -294,8 +321,8 @@ var krb5Conf2 = `
 dns_lookup_realm = false
 `
 
-func writeKrb5Confs() (f1, f2 string, err error) {
-	fh, err := os.CreateTemp("", "test")
+func writeKrb5Confs(tmpDir string) (f1, f2 string, err error) {
+	fh, err := os.CreateTemp(tmpDir, "test")
 	if err != nil {
 		return
 	}
@@ -306,7 +333,7 @@ func writeKrb5Confs() (f1, f2 string, err error) {
 	}
 	_ = fh.Close()
 
-	fh, err = os.CreateTemp("", "test")
+	fh, err = os.CreateTemp(tmpDir, "test")
 	if err != nil {
 		return
 	}

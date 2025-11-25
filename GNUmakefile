@@ -7,7 +7,7 @@ endif
 GO          ?= go
 GOOS 		?= $(shell $(GO) env GOOS)
 GOARCH 		?= $(shell $(GO) env GOARCH)
-TOOLBIN 	 = $(.CURDIR)/toolbin/$(GOOS)_$(GOARCH)
+TOOLBIN 	 = $(current_dir)/toolbin/$(GOOS)_$(GOARCH)
 
 .DEFAULT: build
 
@@ -45,7 +45,7 @@ tools: $(TOOLBIN)/golangci-lint $(TOOLBIN)/gocovmerge $(TOOLBIN)/go-test-coverag
 	@echo "==> installing required tooling..."
 
 $(TOOLBIN)/golangci-lint:
-	GOBIN=$(TOOLBIN) GO111MODULE=on $(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@v1
+	GOBIN=$(TOOLBIN) GO111MODULE=on $(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2
 
 $(TOOLBIN)/gocovmerge:
 	GOBIN=$(TOOLBIN) GO111MODULE=on $(GO) install github.com/wadey/gocovmerge@latest

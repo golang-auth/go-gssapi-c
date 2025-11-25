@@ -62,13 +62,13 @@ and the `usepkgconfig` build tag is supplied.
 ### FreeBSD
 
 FreeBSD versions prior to v15 ship with a version of Heimdal that was forked
-a long time ago.  FreeBSD 15 ship with a modern MIT version instead.
+a long time ago.  FreeBSD 15 ships with a modern MIT version instead.
 As with MacOS, this base implementation will be used by default.  On FreeBSD 15
-it is necessary to supply the `fbsdmit` build tag to include the correct
+it is necessary to supply the `usepkgconf` build tag to include the correct
 libraries - we will remove this requirement once FreeBSD 14 is deprecated.
 
-The ports tree can be used to install a more modern Heimdal version or MIT
-Kerberos and that version can be used by this provider by
+The ports tree can be used to install a more modern Heimdal version (or MIT
+Kerberos before FBSD 15) and those versions can be used by this provider by
 supplying the `usepkgconf` build tag.  Note that it is not possible to
 support both MIT Kerberos and Heimdal from ports simultaneously.
 
@@ -80,20 +80,20 @@ version will be used by the provider.
 
 ### Summary of packages and configuration variables:
 
-| Operating system | GSSAPI implementation  | Pre-requisite packages | `PKG_CONFIG_PATH` | Build tags |
-| ---------------  | ---------------------- | ---------------------- | ----------------- | ---------- |
-| Ubuntu           | MIT                    | krb5-user, libkrb5-devel, pkg-config |  n/a   | n/a     |
-| Ubuntu           | Heimdal                | heimdal-dev, pkg-config | n/a              | n/a        |
-| Fedora/Redhat    | MIT                    | krb5-devel, pkgconf-pkg-config | n/a       | n/a        |
-| Fedora/Redhat    | Heimdal                | heimdal-devel, pkgconf-pkg-config | `/usr/lib64/heimdal/lib/pkgconfig`       | n/a        |
-| MacOS            | Apple Kerberos         | n/a                     | n/a              | n/a        |
-| MacOS            | MIT                    | krb5                    | `/opt/homebrew/opt/krb5/lib/pkgconfig` | `usepkgconfig` |
-| MacOS            | Heimdal 7.8            | heimdal                 | `/opt/homebrew/opt/heimdal/lib/pkgconfig` | `usepkgconfig` |
-| FreeBSD          | FreeBSD Kerberos (prior to v15)      | n/a                     | n/a				 | n/a        |
-| FreeBSD          | FreeBSD Kerberos (from v15)      | n/a                     | n/a				 | `usepkgconfig`        |
-| FreeBSD          | MIT (prior to v15)     | krb5, pkgconf           | n/a 			 | `usepkgconfig`       |
-| FreeBSD          | Heimdal 7.8            | heimdal, pkgconf        | n/a 			 | `usepkgconfig`        |
-| OpenBSD          | Heimdal 7.8            | heimdal                 | n/a              | n/a        |
+| Operating system | GSSAPI implementation           | Pre-requisite packages               | `PKG_CONFIG_PATH`                         | Build tags     |
+| ---------------- | ------------------------------- | ------------------------------------ | ----------------------------------------- | -------------- |
+| Ubuntu           | MIT                             | krb5-user, libkrb5-devel, pkg-config | n/a                                       | n/a            |
+| Ubuntu           | Heimdal                         | heimdal-dev, pkg-config              | n/a                                       | n/a            |
+| Fedora/Redhat    | MIT                             | krb5-devel, pkgconf-pkg-config       | n/a                                       | n/a            |
+| Fedora/Redhat    | Heimdal                         | heimdal-devel, pkgconf-pkg-config    | `/usr/lib64/heimdal/lib/pkgconfig`        | n/a            |
+| MacOS            | Apple Kerberos                  | n/a                                  | n/a                                       | n/a            |
+| MacOS            | MIT                             | krb5                                 | `/opt/homebrew/opt/krb5/lib/pkgconfig`    | `usepkgconfig` |
+| MacOS            | Heimdal 7.8                     | heimdal                              | `/opt/homebrew/opt/heimdal/lib/pkgconfig` | `usepkgconfig` |
+| FreeBSD          | FreeBSD Kerberos (prior to v15) | n/a                                  | n/a                                       | n/a            |
+| FreeBSD          | FreeBSD Kerberos (from v15)     | n/a                                  | n/a                                       | `usepkgconfig` |
+| FreeBSD          | MIT (prior to v15)              | krb5, pkgconf                        | n/a                                       | `usepkgconfig` |
+| FreeBSD          | Heimdal 7.8                     | heimdal, pkgconf                     | n/a                                       | `usepkgconfig` |
+| OpenBSD          | Heimdal 7.8                     | heimdal                              | n/a                                       | n/a            |
 
 Note that FreeBSD and Ubuntu cannot sanely support having MIT and
 Heimdal Kerberos installed at the same time as
