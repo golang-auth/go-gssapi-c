@@ -51,7 +51,7 @@ func (provider) AcquireCredential(name g.GssName, mechs []g.GssMech, usage g.Cre
 	var cCredID C.gss_cred_id_t = C.GSS_C_NO_CREDENTIAL
 	major := C.gss_acquire_cred(&minor, cGssName, gssLifetimeToSeconds(lifetime), cOidSet.oidSet, C.int(usage), &cCredID, nil, nil)
 
-	if major != 0 {
+	if major != C.GSS_S_COMPLETE {
 		return nil, makeStatus(major, minor)
 	}
 
@@ -82,7 +82,7 @@ func (c *Credential) Inquire() (*g.CredInfo, error) {
 	var cMechs C.gss_OID_set // cActualMechs.elements allocated by GSSAPI; released by *2
 	major := C.gss_inquire_cred(&minor, c.id, &cGssName, &cTimeRec, &cCredUsage, &cMechs)
 
-	if major != 0 {
+	if major != C.GSS_S_COMPLETE {
 		return nil, makeStatus(major, minor)
 	}
 
@@ -152,7 +152,7 @@ func (c *Credential) InquireByMech(mech g.GssMech) (*g.CredInfo, error) {
 	var cCredUsage C.gss_cred_usage_t
 	major := C.gss_inquire_cred_by_mech(&minor, c.id, cMechOid, &cGssName, &cTimeRecInit, &cTimeRecAcc, &cCredUsage)
 
-	if major != 0 {
+	if major != C.GSS_S_COMPLETE {
 		return nil, makeMechStatus(major, minor, mech)
 	}
 
@@ -225,7 +225,7 @@ func (c *Credential) Add(name g.GssName, mech g.GssMech, usage g.CredUsage, init
 	}
 
 	major := C.gss_add_cred(&minor, c.id, cGssName, cMechOid, C.int(usage), gssLifetimeToSeconds(initiatorLifetime), gssLifetimeToSeconds(acceptorLifetime), cpCredOut, nil, nil, nil)
-	if major != 0 {
+	if major != C.GSS_S_COMPLETE {
 		return nil, makeMechStatus(major, minor, mech)
 	}
 

@@ -26,6 +26,9 @@ func readSymbols() {
 		"krb5_is_thread_safe",
 		"gss_display_name",
 		"gss_inquire_name",
+		"gss_acquire_cred_from", // Credential Store extension
+		"gss_store_cred_into",   // Credential Store extension
+		"gss_add_cred_from",     // Credential Store extension
 	}
 
 	cDlHandle := C.dlopen(nil, C.RTLD_NOW)

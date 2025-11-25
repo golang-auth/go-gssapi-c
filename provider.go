@@ -33,6 +33,10 @@ func New() (g.Provider, error) {
 	}, nil
 }
 
+func (p *provider) Release() error {
+	return nil
+}
+
 func (p provider) Name() string {
 	return LIBID
 }
@@ -91,5 +95,7 @@ func (p *provider) HasExtension(e g.GssapiExtension) bool {
 		// because they set thread local values which cannot work with Go which moves its goroutines to
 		// different threads.
 		return false
+	case g.HasExtCredStore:
+		return hasSymbol("gss_acquire_cred_from") && hasSymbol("gss_store_cred_into") && hasSymbol("gss_add_cred_from")
 	}
 }

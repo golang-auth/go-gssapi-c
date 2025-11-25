@@ -146,7 +146,7 @@ func (n *GssName) InquireMechs() ([]g.GssMech, error) {
 	var minor C.OM_uint32
 	var cMechSet C.gss_OID_set = C.GSS_C_NO_OID_SET // cMechSet.elements allocated by GSSAPI; released by *1
 	major := C.gss_inquire_mechs_for_name(&minor, n.name, &cMechSet)
-	if major != 0 {
+	if major != C.GSS_S_COMPLETE {
 		return nil, makeStatus(major, minor)
 	}
 
@@ -183,7 +183,7 @@ func (n *GssName) Canonicalize(mech g.GssMech) (g.GssName, error) {
 	var minor C.OM_uint32
 	var cOutName C.gss_name_t = C.GSS_C_NO_NAME
 	major := C.gss_canonicalize_name(&minor, n.name, cMechOid, &cOutName)
-	if major != 0 {
+	if major != C.GSS_S_COMPLETE {
 		return nil, makeMechStatus(major, minor, mech)
 	}
 

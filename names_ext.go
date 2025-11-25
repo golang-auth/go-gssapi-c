@@ -77,7 +77,7 @@ func (n *GssName) Inquire() (g.InquireNameInfo, error) {
 	var cMech C.gss_OID = C.GSS_C_NO_OID
 	var cAttrs C.gss_buffer_set_t // Freed by *1
 	major := C._gogssapi_inquire_name(&minor, n.name, &cNameIsMN, &cMech, &cAttrs)
-	if major != 0 {
+	if major != C.GSS_S_COMPLETE {
 		return ret, makeStatus(major, minor)
 	}
 
