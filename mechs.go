@@ -18,7 +18,7 @@ func (p *provider) IndicateMechs() ([]g.GssMech, error) {
 	var cMechSet C.gss_OID_set // Allocated by GSSAPI; freed by *1
 
 	major := C.gss_indicate_mechs(&minor, &cMechSet)
-	if major != 0 {
+	if major != C.GSS_S_COMPLETE {
 		return nil, makeStatus(major, minor)
 	}
 	// *1 release GSSAPI allocated memory

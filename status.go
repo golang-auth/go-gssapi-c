@@ -114,7 +114,7 @@ func makeCustomStatus(major C.OM_uint32, customErrs ...error) error {
 }
 
 func makeMechStatus(major, minor C.OM_uint32, mech g.GssMech) error {
-	if major == 0 {
+	if major == C.GSS_S_COMPLETE {
 		return nil
 	}
 
@@ -179,7 +179,7 @@ func gssMinorErrors(mechStatus C.OM_uint32, mech g.GssMech) []error {
 
 	for {
 		major := C.gss_display_status(&minor, mechStatus, 2, cMechOid, &msgCtx, &statusString)
-		if major != 0 {
+		if major != C.GSS_S_COMPLETE {
 			// specifically do not call makeStatus here - we might end up in a loop..
 			ret = append(ret, fmt.Errorf("got GSS error %d/%d while finding string for minor code %d", major, minor, mechStatus))
 			break
