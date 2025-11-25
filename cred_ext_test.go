@@ -115,7 +115,8 @@ func TestCredStoreKvSingleOption(t *testing.T) {
 	assert := NewAssert(t)
 
 	store := newCredStore()
-	store.SetOption(int(g.CredStoreCCache), "FILE:/tmp/test")
+	err := store.SetOption(int(g.CredStoreCCache), "FILE:/tmp/test")
+	assert.NoError(err)
 
 	kv := store.kv()
 	defer kv.Release()
@@ -148,7 +149,8 @@ func TestCredStoreKvOptionKeyMappings(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			assert := NewAssert(t)
 			store := newCredStore()
-			store.SetOption(tt.option, tt.value)
+			err := store.SetOption(tt.option, tt.value)
+			assert.NoError(err)
 
 			kvset := store.kv()
 			defer kvset.Release()
@@ -199,7 +201,8 @@ func TestCredStoreKv(t *testing.T) {
 	assert := NewAssert(t)
 
 	store := newCredStore()
-	store.SetOption(int(g.CredStoreServerKeytab), "FILE:/tmp/keytab")
+	err := store.SetOption(int(g.CredStoreServerKeytab), "FILE:/tmp/keytab")
+	assert.NoError(err)
 
 	// Pass nil pinner - should create a new one
 	kvset := store.kv()
@@ -214,7 +217,8 @@ func TestCredStoreKvUnknownOption(t *testing.T) {
 
 	store := newCredStore()
 	// Set an option that's not in the switch statement
-	store.SetOption(999, "unknown value")
+	err := store.SetOption(999, "unknown value")
+	assert.NoError(err)
 
 	kvset := store.kv()
 	defer kvset.Release()

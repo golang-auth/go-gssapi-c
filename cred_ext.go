@@ -244,7 +244,9 @@ func (provider) AcquireCredentialFrom(name g.GssName, mechs []g.GssMech, usage g
 
 	credStore := newCredStore()
 	for _, opt := range opts {
-		opt(&credStore)
+		if err := opt(&credStore); err != nil {
+			return nil, err
+		}
 	}
 
 	kv := credStore.kv()
@@ -275,7 +277,9 @@ func (c *Credential) StoreInto(mech g.GssMech, usage g.CredUsage, overwrite bool
 
 	credStore := newCredStore()
 	for _, opt := range opts {
-		opt(&credStore)
+		if err := opt(&credStore); err != nil {
+			return nil, 0, err
+		}
 	}
 
 	kv := credStore.kv()
@@ -338,7 +342,9 @@ func (c *Credential) AddFrom(name g.GssName, mech g.GssMech, usage g.CredUsage, 
 
 	credStore := newCredStore()
 	for _, opt := range opts {
-		opt(&credStore)
+		if err := opt(&credStore); err != nil {
+			return nil, err
+		}
 	}
 
 	kv := credStore.kv()
