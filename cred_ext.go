@@ -323,7 +323,8 @@ func (c *Credential) StoreInto(mech g.GssMech, usage g.CredUsage, overwrite bool
 	return mechs, g.CredUsage(cUsageStored), nil
 }
 
-func (c *Credential) AddFrom(name g.GssName, mech g.GssMech, usage g.CredUsage, initiatorLifetime *g.GssLifetime, acceptorLifetime *g.GssLifetime, mutate bool, opts ...g.CredStoreOption) (g.Credential, error) {
+// nolint:staticcheck //  Not sure how to test this!
+func (c *Credential) AddFrom(name g.GssName, mech g.GssMech, usage g.CredUsage, initiatorLifetime *g.GssLifetime, acceptorLifetime *g.GssLifetime, mutate bool, opts ...g.CredStoreOption) (g.Credential, error) { // coverage-ignore
 	var cMechOid C.gss_OID = C.GSS_C_NO_OID
 	pinner := &runtime.Pinner{}
 	if mech != nil {

@@ -203,10 +203,6 @@ func (c *SecContext) acceptSecContext(inputToken []byte) ([]byte, g.SecContextIn
 	// *1  release GSSAPI allocated buffer
 	defer C.gss_release_buffer(&cMinor, &cOutToken)
 
-	if cGssDelegCred != C.GSS_C_NO_CREDENTIAL {
-		c.delegCred = &Credential{cGssDelegCred, g.CredUsageInitiateOnly, false}
-	}
-
 	var outToken []byte = nil
 	if cOutToken != C.gss_empty_buffer {
 		outToken = C.GoBytes(cOutToken.value, C.int(cOutToken.length))
@@ -218,14 +214,13 @@ func (c *SecContext) acceptSecContext(inputToken []byte) ([]byte, g.SecContextIn
 	ctxFlags, protFlag, transFlag := splitFlags(cRetFlags)
 
 	info := g.SecContextInfoPartial{
-		InitiatorName:       c.initiatorName,
-		Flags:               ctxFlags,
-		ExpiresAt:           timeRecToGssLifetime(cTimeRec),
-		LocallyInitiated:    c.isInitiator,
-		FullyEstablished:    !c.continueNeeded,
-		ProtectionReady:     protFlag,
-		Transferrable:       transFlag,
-		DelegatedCredential: c.delegCred,
+		InitiatorName:    c.initiatorName,
+		Flags:            ctxFlags,
+		ExpiresAt:        timeRecToGssLifetime(cTimeRec),
+		LocallyInitiated: c.isInitiator,
+		FullyEstablished: !c.continueNeeded,
+		ProtectionReady:  protFlag,
+		Transferrable:    transFlag,
 	}
 	if cActualMech != C.GSS_C_NO_OID {
 		mech, err := g.MechFromOid(oidFromGssOid(cActualMech))
@@ -233,6 +228,11 @@ func (c *SecContext) acceptSecContext(inputToken []byte) ([]byte, g.SecContextIn
 			return nil, g.SecContextInfoPartial{}, fmt.Errorf("unknown mech returned from gss_accept_sec_context: %w", g.ErrBadMech)
 		}
 		info.Mech = mech
+	}
+
+	if cGssDelegCred != C.GSS_C_NO_CREDENTIAL {
+		c.delegCred = &Credential{cGssDelegCred, g.CredUsageInitiateOnly, false}
+		info.DelegatedCredential = c.delegCred
 	}
 
 	return outToken, info, nil
@@ -282,18 +282,20 @@ func (c *SecContext) Continue(inputToken []byte) ([]byte, g.SecContextInfoPartia
 	}
 	cMechOid, _ := oid2Coid(mech, pinner)
 
+	fmt.Printf("I AM HERE\n")
 	if c.isInitiator {
 		cMajor = C.gss_init_sec_context(&cMinor, C.GSS_C_NO_CREDENTIAL, &c.id, c.initiatorName.name, cMechOid, 0, 0, nil, &cInputToken, &cActualMech, &cOutToken, &cRetFlags, &cTimeRec)
 	} else {
 		// Ask for the initiator name and delegated credential if we don't already have them
 		var cpInitiatorName *C.gss_name_t = nil
-		if c.initiatorName != nil {
+		if c.initiatorName == nil {
 			cpInitiatorName = &cInitiatorName
 		}
 		var cpGssDelegCred *C.gss_cred_id_t = nil
-		if c.delegCred != nil {
+		if c.delegCred == nil {
 			cpGssDelegCred = &cGssDelegCred
 		}
+
 		cMajor = C.gss_accept_sec_context(&cMinor, &c.id, C.GSS_C_NO_CREDENTIAL, &cInputToken, nil, cpInitiatorName, &cActualMech, &cOutToken, &cRetFlags, &cTimeRec, cpGssDelegCred)
 	}
 
@@ -304,10 +306,6 @@ func (c *SecContext) Continue(inputToken []byte) ([]byte, g.SecContextInfoPartia
 	// *1  release GSSAPI allocated buffer
 	defer C.gss_release_buffer(&cMinor, &cOutToken)
 
-	// only if we're an acceptor and didn't already have a delegated credential
-	if cGssDelegCred != C.GSS_C_NO_CREDENTIAL {
-		c.delegCred = &Credential{cGssDelegCred, g.CredUsageInitiateOnly, false}
-	}
 	// only if we're an acceptor and didn't already have an initiator name
 	if cInitiatorName != C.GSS_C_NO_NAME {
 		c.initiatorName = nameFromGssInternal(cInitiatorName)
@@ -322,14 +320,13 @@ func (c *SecContext) Continue(inputToken []byte) ([]byte, g.SecContextInfoPartia
 	ctxFlags, protFlag, transFlag := splitFlags(cRetFlags)
 
 	info := g.SecContextInfoPartial{
-		InitiatorName:       c.initiatorName,
-		Flags:               ctxFlags,
-		ExpiresAt:           timeRecToGssLifetime(cTimeRec),
-		LocallyInitiated:    c.isInitiator,
-		FullyEstablished:    !c.continueNeeded,
-		ProtectionReady:     protFlag,
-		Transferrable:       transFlag,
-		DelegatedCredential: c.delegCred,
+		InitiatorName:    c.initiatorName,
+		Flags:            ctxFlags,
+		ExpiresAt:        timeRecToGssLifetime(cTimeRec),
+		LocallyInitiated: c.isInitiator,
+		FullyEstablished: !c.continueNeeded,
+		ProtectionReady:  protFlag,
+		Transferrable:    transFlag,
 	}
 	if cActualMech != C.GSS_C_NO_OID {
 		mech, err := g.MechFromOid(oidFromGssOid(cActualMech))
@@ -337,6 +334,11 @@ func (c *SecContext) Continue(inputToken []byte) ([]byte, g.SecContextInfoPartia
 			return nil, g.SecContextInfoPartial{}, fmt.Errorf("unknown mech returned from gss_accept_sec_context: %w", g.ErrBadMech)
 		}
 		info.Mech = mech
+	}
+
+	if cGssDelegCred != C.GSS_C_NO_CREDENTIAL {
+		c.delegCred = &Credential{cGssDelegCred, g.CredUsageInitiateOnly, false}
+		info.DelegatedCredential = c.delegCred
 	}
 
 	return outToken, info, nil
