@@ -282,7 +282,6 @@ func (c *SecContext) Continue(inputToken []byte) ([]byte, g.SecContextInfoPartia
 	}
 	cMechOid, _ := oid2Coid(mech, pinner)
 
-	fmt.Printf("I AM HERE\n")
 	if c.isInitiator {
 		cMajor = C.gss_init_sec_context(&cMinor, C.GSS_C_NO_CREDENTIAL, &c.id, c.initiatorName.name, cMechOid, 0, 0, nil, &cInputToken, &cActualMech, &cOutToken, &cRetFlags, &cTimeRec)
 	} else {
