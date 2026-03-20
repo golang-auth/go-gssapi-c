@@ -76,7 +76,7 @@ func (c *Credential) Release() error {
 
 func (c *Credential) Inquire() (*g.CredInfo, error) {
 	var minor C.OM_uint32
-	var cGssName C.gss_name_t // cGssName allocated by GSSAPI; releaseed by *1
+	var cGssName C.gss_name_t // cGssName allocated by GSSAPI; released by *1
 	var cTimeRec C.OM_uint32
 	var cCredUsage C.gss_cred_usage_t
 	var cMechs C.gss_OID_set // cActualMechs.elements allocated by GSSAPI; released by *2
@@ -147,7 +147,7 @@ func (c *Credential) InquireByMech(mech g.GssMech) (*g.CredInfo, error) {
 	defer pinner.Unpin()
 
 	var minor C.OM_uint32
-	var cGssName C.gss_name_t // cGssName allocated by GSSAPI; releaseed by *1
+	var cGssName C.gss_name_t // cGssName allocated by GSSAPI; released by *1
 	var cTimeRecInit, cTimeRecAcc C.OM_uint32
 	var cCredUsage C.gss_cred_usage_t
 	major := C.gss_inquire_cred_by_mech(&minor, c.id, cMechOid, &cGssName, &cTimeRecInit, &cTimeRecAcc, &cCredUsage)
@@ -231,7 +231,6 @@ func (c *Credential) Add(name g.GssName, mech g.GssMech, usage g.CredUsage, init
 
 	if mutate {
 		return c, nil
-	} else {
-		return &Credential{id: cCredOut}, nil
 	}
+	return &Credential{id: cCredOut}, nil
 }

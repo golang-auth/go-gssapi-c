@@ -120,6 +120,7 @@ import (
 var credStoreSymbols = symbolMap{
 	"gss_acquire_cred_from": &C.__gss_acquire_cred_from,
 	"gss_store_cred_into":   &C.__gss_store_cred_into,
+	"gss_add_cred_from":     &C.__gss_add_cred_from,
 }
 
 func init() {
@@ -365,7 +366,6 @@ func (c *Credential) AddFrom(name g.GssName, mech g.GssMech, usage g.CredUsage, 
 
 	if mutate {
 		return c, nil
-	} else {
-		return &Credential{id: cCredOut}, nil
 	}
+	return &Credential{id: cCredOut}, nil
 }

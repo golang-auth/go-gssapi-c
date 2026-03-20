@@ -261,9 +261,8 @@ func (c *SecContext) Continue(inputToken []byte) ([]byte, g.SecContextInfoPartia
 	if c.id == nil {
 		if c.isInitiator {
 			return c.initSecContext()
-		} else {
-			return c.acceptSecContext(inputToken)
 		}
+		return c.acceptSecContext(inputToken)
 	}
 
 	// otherwise continue establishing the context..
@@ -388,7 +387,7 @@ func (c *SecContext) Delete() ([]byte, error) {
 	return outToken, makeStatus(cMajor, cMinor)
 }
 
-// ProcessToken is used to process error tokens from the peero.  No idea how to test this!
+// ProcessToken is used to process error tokens from the peer.  No idea how to test this!
 func (c *SecContext) ProcessToken(token []byte) error {
 	var cMinor C.OM_uint32
 	cInputToken, pinner := bytesToCBuffer(token, nil)
@@ -520,7 +519,7 @@ func (c *SecContext) Export() ([]byte, error) {
 	var cMinor C.OM_uint32
 	var cToken C.gss_buffer_desc = C.gss_empty_buffer // allocated by GSSAPI;  released by *1
 	cMajor := C.gss_export_sec_context(&cMinor, &c.id, &cToken)
-	if cMajor != 0 {
+	if cMajor != C.GSS_S_COMPLETE {
 		return nil, makeStatus(cMajor, cMinor)
 	}
 
@@ -579,7 +578,7 @@ func (c *SecContext) Unwrap(msgIn []byte) ([]byte, bool, g.QoP, error) {
 	var cQoP C.gss_qop_t
 
 	cMajor := C.gss_unwrap(&cMinor, c.id, &cInputMessage, &cOutputMessage, &cConfState, &cQoP)
-	if cMajor != 0 {
+	if cMajor != C.GSS_S_COMPLETE {
 		return nil, false, 0, makeStatus(cMajor, cMinor)
 	}
 
@@ -604,7 +603,7 @@ func (c *SecContext) GetMIC(msg []byte, qop g.QoP) ([]byte, error) {
 	var cMinor C.OM_uint32
 	var cMsgToken C.gss_buffer_desc = C.gss_empty_buffer // allocated by GSSAPI;  released by *1
 	cMajor := C.gss_get_mic(&cMinor, c.id, C.gss_qop_t(qop), &cMessage, &cMsgToken)
-	if cMajor != 0 {
+	if cMajor != C.GSS_S_COMPLETE {
 		return nil, makeStatus(cMajor, cMinor)
 	}
 
