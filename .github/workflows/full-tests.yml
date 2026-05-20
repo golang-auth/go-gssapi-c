@@ -21,10 +21,10 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Go 1.25
+    - name: Set up Go 1.26
       uses: actions/setup-go@v5
       with:
-          go-version: 1.25.x
+          go-version: 1.26.x
 
     - name: OS details
       run: |
@@ -78,9 +78,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go-version: ['1.24.x', '1.25.x' ]
+        go-version: ['1.25.x', '1.26.x' ]
         krb5-version: ["base", "mit", "heimdal"]
-        os-version: ["14.3", "15.0"]
+        os-version: ["14.4", "15.0"]
         exclude:
           - os-version: "15.0"
             krb5-version: "mit"
@@ -97,10 +97,10 @@ jobs:
         release: "${{ matrix.os-version }}"
         prepare: |
           PKGS="pkgconf"
-          if [ "${{ matrix.go-version }}" = "1.24.x" ]; then
-            PKGS="${PKGS} go124"
-          else
+          if [ "${{ matrix.go-version }}" = "1.25.x" ]; then
             PKGS="${PKGS} go125"
+          else
+            PKGS="${PKGS} go126"
           fi
 
           if [ "${{ matrix.krb5-version }}" = "mit" ]; then
@@ -120,12 +120,13 @@ jobs:
           pkg install -y ${PKGS}
 
         run: |
-          if [ "${{ matrix.go-version }}" = "1.24.x" ]; then
-            export PATH=/usr/local/go124/bin:$PATH
-          else
+          if [ "${{ matrix.go-version }}" = "1.25.x" ]; then
             export PATH=/usr/local/go125/bin:$PATH
+          else
+            export PATH=/usr/local/go126/bin:$PATH
           fi
 
+          TAGS=""
           if [ "${{ matrix.krb5-version }}" != "base" ]; then
             TAGS="-tags usepkgconfig"
           fi
@@ -135,9 +136,11 @@ jobs:
 
           echo Using PATH $PATH
           echo Using go: $(go version)
-          echo Kerberos package config:
-          pkg-config -libs krb5-gssapi
-          pkg-config -cflags krb5-gssapi
+          if [ "${{ matrix.krb5-version }}" != "base" ]; then
+            echo Kerberos package config:
+            pkg-config -libs krb5-gssapi
+            pkg-config -cflags krb5-gssapi
+          fi
 
           export OPENSSL_CONF=./.openssl-rc4.conf
           echo Using OPENSSL_CONF $OPENSSL_CONF
@@ -153,7 +156,7 @@ jobs:
       max-parallel: 4
       matrix:
         os: ['ubuntu-latest', 'macos-latest']
-        go-version: ['1.24.x', '1.25.x' ]
+        go-version: ['1.25.x', '1.26.x' ]
         krb5-version: ["base", "mit", "heimdal"]
         exclude:
           - os: ubuntu-latest
