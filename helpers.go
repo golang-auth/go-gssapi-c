@@ -33,7 +33,7 @@ func oid2String(oid g.Oid) (string, error) {
 		if i > 0 {
 			s.WriteString(".")
 		}
-		s.WriteString(fmt.Sprintf("%d", o))
+		fmt.Fprintf(&s, "%d", o)
 	}
 
 	return s.String(), nil
