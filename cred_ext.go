@@ -120,6 +120,7 @@ import (
 var credStoreSymbols = symbolMap{
 	"gss_acquire_cred_from": &C.__gss_acquire_cred_from,
 	"gss_store_cred_into":   &C.__gss_store_cred_into,
+	"gss_add_cred_from":     &C.__gss_add_cred_from,
 }
 
 func init() {
