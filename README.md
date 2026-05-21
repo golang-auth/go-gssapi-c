@@ -1,8 +1,7 @@
 # Go-GSSAPI C bindings provider
 
 ![GitHub tag (latest SemVer)](https://img.shields.io/github/v/tag/golang-auth/go-gssapi-c)
-[![Git Workflow](https://img.shields.io/github/actions/workflow/status/golang-auth/go-gssapi-c/full-tests.yml?branch=main/
-)](https://img.shields.io/github/actions/workflow/status/golang-auth/go-gssapi-c/full-tests.yml?branch=main)
+[![Git Workflow](https://img.shields.io/github/actions/workflow/status/golang-auth/go-gssapi-c/full-tests.yml?branch=main)](https://github.com/golang-auth/go-gssapi-c/actions/workflows/full-tests.yml)
 
 The go-gssapi-c package is a provider that implements the
 [Go GSSAPI][gssapi-v3] interfaces for access to a C library implementing
@@ -20,7 +19,7 @@ combinations:
     * FreeBSD Kerberos:
       * Heimdal for FreeBSD before version 15
       * MIT from version 15
-    * MIT Kerberos (from ports for FreeBSD before versions 15)
+    * MIT Kerberos (from ports for FreeBSD before version 15)
     * Heimdal Kerberos 7.8.0 (from ports)
  * OpenBSD with Heimdal Kerberos 7.8.0 from ports
 
@@ -68,12 +67,12 @@ and the `usepkgconfig` build tag is supplied.
 FreeBSD versions prior to v15 ship with a version of Heimdal that was forked
 a long time ago.  FreeBSD 15 ships with a modern MIT version instead.
 As with MacOS, this base implementation will be used by default.  On FreeBSD 15
-it is necessary to supply the `usepkgconf` build tag to include the correct
+it is necessary to supply the `usepkgconfig` build tag to include the correct
 libraries - we will remove this requirement once FreeBSD 14 is deprecated.
 
 The ports tree can be used to install a more modern Heimdal version (or MIT
 Kerberos before FBSD 15) and those versions can be used by this provider by
-supplying the `usepkgconf` build tag.  Note that it is not possible to
+supplying the `usepkgconfig` build tag.  Note that it is not possible to
 support both MIT Kerberos and Heimdal from ports simultaneously.
 
 ### OpenBSD

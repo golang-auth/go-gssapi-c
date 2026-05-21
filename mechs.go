@@ -27,7 +27,6 @@ func (p *provider) IndicateMechs() ([]g.GssMech, error) {
 	ret := make([]g.GssMech, 0, cMechSet.count)
 	mechOids := oidsFromGssOidSet(cMechSet)
 
-	// Use unsafe to access the OID set elements
 	for _, oid := range mechOids {
 		mech, err := g.MechFromOid(oid)
 		switch {
@@ -39,7 +38,6 @@ func (p *provider) IndicateMechs() ([]g.GssMech, error) {
 		case err != nil:
 			return nil, err
 		}
-		// If MechFromOid fails, skip that OID (could log or handle differently if desired)
 	}
 	return ret, nil
 }

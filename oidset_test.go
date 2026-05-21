@@ -37,5 +37,7 @@ func TestOidSet(t *testing.T) {
 			assert.NoErrorFatal(err)
 			assert.Equal(mechs[i].OidString(), oidString)
 		}
+
+		assert.NoError(oidSet.Release())
 	}
 }
