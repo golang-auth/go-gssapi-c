@@ -41,8 +41,8 @@ func (p provider) Name() string {
 	return LIBID
 }
 
-// ErrTooLarge indicates that the caller tried to operate on a m.  The C bindings
-// support a maximum 32-bit message.
+// ErrTooLarge indicates that the caller tried to operate on a message that is too large.
+// The C bindings support a maximum 32-bit message size.
 var ErrTooLarge = errors.New("the GSSAPI-C bindings only support up to 32 bit messages")
 
 func isHeimdal() bool {

@@ -126,7 +126,7 @@ func (n *GssName) Display() (string, g.GssNameType, error) {
 	oid := oidFromGssOid(cOutType)
 	nameType, err := g.NameTypeFromOid(oid)
 	if err != nil {
-		return "", g.GSS_NO_OID, makeStatus(major, minor)
+		return "", g.GSS_NO_OID, err
 	}
 
 	return string(name), nameType, nil

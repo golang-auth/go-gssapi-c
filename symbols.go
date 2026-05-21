@@ -32,16 +32,9 @@ func readSymbols() {
 		"gss_add_cred_from",     // Credential Store extension
 	}
 
-	cDlHandle := C.dlopen(nil, C.RTLD_NOW)
-	if cDlHandle == nil {
-		panic("failed to open library")
-	}
-
-	defer C.dlclose(cDlHandle)
-
 	for _, sym := range syms {
 		symStr := C.CString(sym)
-		ptr := C.dlsym(cDlHandle, symStr)
+		ptr := C.dlsym(C.RTLD_DEFAULT, symStr)
 		optionalSymbols[sym] = ptr
 		C.free(unsafe.Pointer(symStr))
 	}

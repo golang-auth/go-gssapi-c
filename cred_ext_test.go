@@ -105,8 +105,8 @@ func TestCredStoreKvEmpty(t *testing.T) {
 	store := newCredStore()
 
 	kv := store.kv()
-	assert.NotNil(kv.kvset)
-	assert.Equal(0, int(kv.kvset.count))
+	assert.NotNil(kv.set)
+	assert.Equal(0, int(kv.set.count))
 
 	kv.Release()
 }
@@ -121,9 +121,9 @@ func TestCredStoreKvSingleOption(t *testing.T) {
 	kv := store.kv()
 	defer kv.Release()
 
-	assert.NotNil(kv.kvset)
-	assert.Equal(1, int(kv.kvset.count))
-	assert.NotNil(kv.kvset.elements)
+	assert.NotNil(kv.set)
+	assert.Equal(1, int(kv.set.count))
+	assert.NotNil(kv.set.elements)
 
 	key, value := kv.kv(0)
 	assert.Equal("ccache", key)
@@ -155,9 +155,9 @@ func TestCredStoreKvOptionKeyMappings(t *testing.T) {
 			kvset := store.kv()
 			defer kvset.Release()
 
-			assert.NotNil(kvset.kvset)
-			assert.Equal(1, int(kvset.kvset.count))
-			assert.NotNil(kvset.kvset.elements)
+			assert.NotNil(kvset.set)
+			assert.Equal(1, int(kvset.set.count))
+			assert.NotNil(kvset.set.elements)
 
 			kv := kvset.Get(0)
 			assert.NotNil(kv.key)
@@ -192,9 +192,9 @@ func TestCredStoreKvAllOptions(t *testing.T) {
 	kvset := store.kv()
 	defer kvset.Release()
 
-	assert.NotNil(kvset.kvset)
-	assert.Equal(len(testValues), int(kvset.kvset.count))
-	assert.NotNil(kvset.kvset.elements)
+	assert.NotNil(kvset.set)
+	assert.Equal(len(testValues), int(kvset.set.count))
+	assert.NotNil(kvset.set.elements)
 }
 
 func TestCredStoreKv(t *testing.T) {
@@ -208,8 +208,8 @@ func TestCredStoreKv(t *testing.T) {
 	kvset := store.kv()
 	defer kvset.Release()
 
-	assert.NotNil(kvset.kvset)
-	assert.Equal(1, int(kvset.kvset.count))
+	assert.NotNil(kvset.set)
+	assert.Equal(1, int(kvset.set.count))
 }
 
 func TestCredStoreKvUnknownOption(t *testing.T) {
@@ -223,9 +223,9 @@ func TestCredStoreKvUnknownOption(t *testing.T) {
 	kvset := store.kv()
 	defer kvset.Release()
 
-	assert.NotNil(kvset.kvset)
-	assert.Equal(0, int(kvset.kvset.count))
-	assert.Nil(kvset.kvset.elements)
+	assert.NotNil(kvset.set)
+	assert.Equal(0, int(kvset.set.count))
+	assert.Nil(kvset.set.elements)
 
 	kv := kvset.Get(0)
 	assert.Nil(kv)

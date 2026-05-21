@@ -40,8 +40,11 @@ func mkChannelBindings(cb *g.ChannelBinding, pinner *runtime.Pinner) (C.gss_chan
 	}
 
 	cCB.application_data.length = C.size_t(len(cb.Data))
-	cCB.application_data.value = unsafe.Pointer(&cb.Data[0])
-	pinner.Pin(&cb.Data[0])
+
+	if len(cb.Data) > 0 {
+		cCB.application_data.value = unsafe.Pointer(&cb.Data[0])
+		pinner.Pin(&cb.Data[0])
+	}
 
 	return &cCB, pinner
 }
