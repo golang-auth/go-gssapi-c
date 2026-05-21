@@ -5,6 +5,7 @@
 package gssapi
 
 import (
+	"math"
 	"runtime"
 	"unsafe"
 
@@ -42,7 +43,7 @@ func oid2Coid(oid g.Oid, pinner *runtime.Pinner) (C.gss_OID, *runtime.Pinner) {
 		pinner = &runtime.Pinner{}
 	}
 
-	if len(oid) > 0 {
+	if len(oid) > 0 && len(oid) <= math.MaxUint32 {
 		pinner.Pin(&oid[0])
 		var cOid C.gss_OID_desc
 

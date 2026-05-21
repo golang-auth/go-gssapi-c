@@ -15,14 +15,14 @@ import (
 import "C"
 
 // FatalCallingError extends the go-gssapi FatalStatus type with a C-binding specific
-// calling error (RFC 2744 § 3.9.1).  It is retrurned in cases that the C library
+// calling error (RFC 2744 § 3.9.1).  It is returned in cases that the C library
 // populates bits 24-31 of the major error code returned from its functions.  These
-// are programming errors made by the caller of the GSSPAI routines.  Note that not
+// are programming errors made by the caller of the GSSAPI routines.  Note that not
 // all of the C implementations make use of these calling errors - MIT does; Heimdal does
 // not and will happily segfault instead.
 //
 // The Error() method adds details about the calling error to its output.  Generally this
-// is sufficinent; if the caller needs to inspect the calling error it can check using
+// is sufficient; if the caller needs to inspect the calling error it can check using
 // [errors.Is()] and the ErrInaccessibleRead, ErrInaccessibleWrite and ErrBadStructure
 // values.
 type FatalCallingError struct {
@@ -185,11 +185,12 @@ func gssMinorErrors(mechStatus C.OM_uint32, mech g.GssMech) []error {
 			break
 		}
 
-		// *1 Release buffer
-		defer C.gss_release_buffer(&minor, &statusString)
-
 		s := C.GoStringN((*C.char)(statusString.value), C.int(statusString.length))
 		ret = append(ret, errors.New(s))
+
+		// *1 Release buffer
+		C.gss_release_buffer(&minor, &statusString)
+		statusString = C.gss_empty_buffer
 
 		// all done when the message context is set to zero by gss_display_status
 		if msgCtx == 0 {

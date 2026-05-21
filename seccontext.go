@@ -8,6 +8,7 @@ package gssapi
 import "C"
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"runtime"
@@ -131,7 +132,7 @@ func (c *SecContext) initSecContext() ([]byte, g.SecContextInfoPartial, error) {
 	defer C.gss_release_buffer(&cMinor, &cOutToken)
 
 	var outToken []byte = nil
-	if cOutToken != C.gss_empty_buffer {
+	if cOutToken.length > 0 {
 		outToken = C.GoBytes(cOutToken.value, C.int(cOutToken.length))
 	}
 	c.continueNeeded = (cMajor & C.GSS_S_CONTINUE_NEEDED) > 0
@@ -170,7 +171,7 @@ func splitFlags(flags C.OM_uint32) (g.ContextFlag, bool, bool) {
 
 func (c *SecContext) acceptSecContext(inputToken []byte) ([]byte, g.SecContextInfoPartial, error) {
 	// get the C cred ID and name
-	var cGssAcceptorCred, cGssDelegCred C.gss_cred_id_t = C.GSS_C_NO_CREDENTIAL, C.GSS_C_NO_CREDENTIAL
+	var cGssAcceptorCred C.gss_cred_id_t = C.GSS_C_NO_CREDENTIAL
 	if c.acceptOptions.Credential != nil {
 		credImpl, ok := c.acceptOptions.Credential.(*Credential) // must be *our* impl
 		if !ok {
@@ -189,24 +190,32 @@ func (c *SecContext) acceptSecContext(inputToken []byte) ([]byte, g.SecContextIn
 	}
 
 	var cMinor, cRetFlags, cTimeRec C.OM_uint32
-	var cInitiatorName C.gss_name_t = C.GSS_C_NO_NAME
+	var cInitiatorName C.gss_name_t = C.GSS_C_NO_NAME // allocated by GSSAPI; released by *2 on error
 	var cGssCtxID C.gss_ctx_id_t = C.GSS_C_NO_CONTEXT
 	var cOutToken C.gss_buffer_desc = C.gss_empty_buffer // cOutToken.value allocated by GSSAPI; released by *1
 	var cActualMech C.gss_OID = C.GSS_C_NO_OID
+	var cGssDelegCred C.gss_cred_id_t = C.GSS_C_NO_CREDENTIAL // allocated by GSSAPI; released by *3 on error
 	cInputToken, _ := bytesToCBuffer(inputToken, pinner)
 
 	cMajor := C.gss_accept_sec_context(&cMinor, &cGssCtxID, cGssAcceptorCred, &cInputToken, cChBindings, &cInitiatorName, &cActualMech, &cOutToken, &cRetFlags, &cTimeRec, &cGssDelegCred)
-	if cMajor != C.GSS_S_COMPLETE && (cMajor&C.GSS_S_CONTINUE_NEEDED) == 0 {
-		return nil, g.SecContextInfoPartial{}, makeStatus(cMajor, cMinor)
-	}
 
 	// *1  release GSSAPI allocated buffer
 	defer C.gss_release_buffer(&cMinor, &cOutToken)
 
+	// note that there might still be an output token if there is an error
 	var outToken []byte = nil
-	if cOutToken != C.gss_empty_buffer {
+	if cOutToken.length > 0 {
 		outToken = C.GoBytes(cOutToken.value, C.int(cOutToken.length))
 	}
+
+	if cMajor != C.GSS_S_COMPLETE && (cMajor&C.GSS_S_CONTINUE_NEEDED) == 0 {
+		var errs []error
+		errs = append(errs, gssRelease(gssReleaseCred, &cGssDelegCred))  // *3   release delegated credential
+		errs = append(errs, gssRelease(gssReleaseName, &cInitiatorName)) // *2   release initiator name
+		errs = append(errs, makeStatus(cMajor, cMinor))
+		return outToken, g.SecContextInfoPartial{}, errors.Join(errs...)
+	}
+
 	c.continueNeeded = (cMajor & C.GSS_S_CONTINUE_NEEDED) > 0
 	c.id = cGssCtxID
 	c.initiatorName = nameFromGssInternal(cInitiatorName)
@@ -231,7 +240,7 @@ func (c *SecContext) acceptSecContext(inputToken []byte) ([]byte, g.SecContextIn
 	}
 
 	if cGssDelegCred != C.GSS_C_NO_CREDENTIAL {
-		c.delegCred = &Credential{cGssDelegCred, g.CredUsageInitiateOnly, false}
+		c.delegCred = &Credential{id: cGssDelegCred, usage: g.CredUsageInitiateOnly, isFromNoName: false}
 		info.DelegatedCredential = c.delegCred
 	}
 
@@ -271,8 +280,8 @@ func (c *SecContext) Continue(inputToken []byte) ([]byte, g.SecContextInfoPartia
 	var cMajor, cMinor, cRetFlags, cTimeRec C.OM_uint32
 	var cOutToken C.gss_buffer_desc = C.gss_empty_buffer // cOutToken.value allocated by GSSAPI; released by *1
 	var cActualMech C.gss_OID = C.GSS_C_NO_OID
-	var cInitiatorName C.gss_name_t = C.GSS_C_NO_NAME
-	var cGssDelegCred C.gss_cred_id_t = C.GSS_C_NO_CREDENTIAL
+	var cInitiatorName C.gss_name_t = C.GSS_C_NO_NAME         // allocated by GSSAPI; released by *2 on error
+	var cGssDelegCred C.gss_cred_id_t = C.GSS_C_NO_CREDENTIAL // allocated by GSSAPI; released by *3 on error
 	cInputToken, pinner := bytesToCBuffer(inputToken, nil)
 	defer pinner.Unpin()
 
@@ -298,22 +307,27 @@ func (c *SecContext) Continue(inputToken []byte) ([]byte, g.SecContextInfoPartia
 		cMajor = C.gss_accept_sec_context(&cMinor, &c.id, C.GSS_C_NO_CREDENTIAL, &cInputToken, nil, cpInitiatorName, &cActualMech, &cOutToken, &cRetFlags, &cTimeRec, cpGssDelegCred)
 	}
 
-	if cMajor != C.GSS_S_COMPLETE && cMajor != C.GSS_S_CONTINUE_NEEDED {
-		return nil, g.SecContextInfoPartial{}, makeStatus(cMajor, cMinor)
-	}
-
 	// *1  release GSSAPI allocated buffer
 	defer C.gss_release_buffer(&cMinor, &cOutToken)
+
+	var outToken []byte = nil
+	if cOutToken.length > 0 {
+		outToken = C.GoBytes(cOutToken.value, C.int(cOutToken.length))
+	}
+
+	if cMajor != C.GSS_S_COMPLETE && cMajor != C.GSS_S_CONTINUE_NEEDED {
+		var errs []error
+		errs = append(errs, gssRelease(gssReleaseCred, &cGssDelegCred))  // *3   release delegated credential
+		errs = append(errs, gssRelease(gssReleaseName, &cInitiatorName)) // *2   release initiator name
+		errs = append(errs, makeStatus(cMajor, cMinor))
+		return outToken, g.SecContextInfoPartial{}, errors.Join(errs...)
+	}
 
 	// only if we're an acceptor and didn't already have an initiator name
 	if cInitiatorName != C.GSS_C_NO_NAME {
 		c.initiatorName = nameFromGssInternal(cInitiatorName)
 	}
 
-	var outToken []byte = nil
-	if cOutToken != C.gss_empty_buffer {
-		outToken = C.GoBytes(cOutToken.value, C.int(cOutToken.length))
-	}
 	c.continueNeeded = cMajor&C.GSS_S_CONTINUE_NEEDED > 0
 
 	ctxFlags, protFlag, transFlag := splitFlags(cRetFlags)
@@ -336,7 +350,7 @@ func (c *SecContext) Continue(inputToken []byte) ([]byte, g.SecContextInfoPartia
 	}
 
 	if cGssDelegCred != C.GSS_C_NO_CREDENTIAL {
-		c.delegCred = &Credential{cGssDelegCred, g.CredUsageInitiateOnly, false}
+		c.delegCred = &Credential{id: cGssDelegCred, usage: g.CredUsageInitiateOnly, isFromNoName: false}
 		info.DelegatedCredential = c.delegCred
 	}
 
@@ -351,29 +365,24 @@ func (c *SecContext) Delete() ([]byte, error) {
 	if c == nil {
 		return nil, nil
 	}
+	errs := []error{}
 	if c.initiatorName != nil {
-		if err := c.initiatorName.Release(); err != nil {
-			return nil, err
-		}
+		errs = append(errs, c.initiatorName.Release())
 		c.initiatorName = nil
 	}
 
 	if c.acceptorName != nil {
-		if err := c.acceptorName.Release(); err != nil {
-			return nil, err
-		}
+		errs = append(errs, c.acceptorName.Release())
 		c.acceptorName = nil
 	}
 
 	if c.delegCred != nil {
-		if err := c.delegCred.Release(); err != nil {
-			return nil, err
-		}
+		errs = append(errs, c.delegCred.Release())
 		c.delegCred = nil
 	}
 
 	if c.id == nil {
-		return nil, nil
+		return nil, errors.Join(errs...)
 	}
 	var cMinor C.OM_uint32
 	var cOutToken C.gss_buffer_desc = C.gss_empty_buffer // allocated by GSSAPI;  released by *1
@@ -385,10 +394,12 @@ func (c *SecContext) Delete() ([]byte, error) {
 	c.id = nil
 	outToken := C.GoBytes(cOutToken.value, C.int(cOutToken.length))
 
-	return outToken, makeStatus(cMajor, cMinor)
+	errs = append(errs, makeStatus(cMajor, cMinor))
+
+	return outToken, errors.Join(errs...)
 }
 
-// ProcessToken is used to process error tokens from the peero.  No idea how to test this!
+// ProcessToken is used to process error tokens from the peer.  No idea how to test this!
 func (c *SecContext) ProcessToken(token []byte) error {
 	var cMinor C.OM_uint32
 	cInputToken, pinner := bytesToCBuffer(token, nil)

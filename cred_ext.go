@@ -67,8 +67,8 @@ OM_uint32 _gss_store_cred_into(OM_uint32 *minor_status,
                                   gss_cred_usage_t *cred_usage_stored)
 								  {
 	if( __gss_store_cred_into == NULL ) {
-	*minor_status = 0;
-	return GSS_S_UNAVAILABLE;
+		*minor_status = 0;
+		return GSS_S_UNAVAILABLE;
 	}
 	return __gss_store_cred_into(minor_status, input_cred_handle, cred_usage, desired_mech, overwrite_cred, default_cred, cred_store, elements_stored, cred_usage_stored);
 }
@@ -144,13 +144,20 @@ func (s credStore) GetOption(option int) (string, bool) {
 }
 
 type kvset struct {
-	kvset  C.gss_const_key_value_set_t
+	set    *C.struct_gss_key_value_set_struct
 	pinner *runtime.Pinner
+}
+
+func (k *kvset) constSet() C.gss_const_key_value_set_t {
+	if k.set == nil {
+		return nil
+	}
+	return (C.gss_const_key_value_set_t)(unsafe.Pointer(k.set))
 }
 
 func (s credStore) kv() *kvset {
 	kvs := kvset{
-		kvset: &C.gss_key_value_set_desc{
+		set: &C.struct_gss_key_value_set_struct{
 			count:    0,
 			elements: nil,
 		},
@@ -183,17 +190,17 @@ func (s credStore) kv() *kvset {
 	}
 
 	if len(elms) > 0 {
-		kvs.kvset.elements = unsafe.SliceData(elms)
-		kvs.kvset.count = C.OM_uint32(len(elms))
+		kvs.set.elements = unsafe.SliceData(elms)
+		kvs.set.count = C.OM_uint32(len(elms))
 
-		kvs.pinner.Pin(kvs.kvset.elements)
+		kvs.pinner.Pin(kvs.set.elements)
 	}
 
 	return &kvs
 }
 
 func (k *kvset) Release() {
-	for i := 0; i < int(k.kvset.count); i++ {
+	for i := 0; i < int(k.set.count); i++ {
 		elm := k.Get(i)
 		if elm == nil {
 			continue
@@ -206,11 +213,11 @@ func (k *kvset) Release() {
 }
 
 func (k *kvset) Get(idx int) *C.struct_gss_key_value_element_struct {
-	if idx >= int(k.kvset.count) {
+	if idx >= int(k.set.count) {
 		return nil
 	}
 	return (*C.struct_gss_key_value_element_struct)(
-		unsafe.Add(unsafe.Pointer(k.kvset.elements), idx*int(unsafe.Sizeof(C.struct_gss_key_value_element_struct{}))))
+		unsafe.Add(unsafe.Pointer(k.set.elements), idx*int(unsafe.Sizeof(C.struct_gss_key_value_element_struct{}))))
 }
 
 func (k *kvset) kv(idx int) (string, string) {
@@ -254,7 +261,7 @@ func (provider) AcquireCredentialFrom(name g.GssName, mechs []g.GssMech, usage g
 
 	var cMinor C.OM_uint32
 	var cCredID C.gss_cred_id_t = C.GSS_C_NO_CREDENTIAL
-	cMajor := C._gss_acquire_cred_from(&cMinor, cGssName, gssLifetimeToSeconds(lifetime), cOidSet.oidSet, C.int(usage), kv.kvset, &cCredID, nil, nil)
+	cMajor := C._gss_acquire_cred_from(&cMinor, cGssName, gssLifetimeToSeconds(lifetime), cOidSet.oidSet, C.int(usage), kv.constSet(), &cCredID, nil, nil)
 
 	if cMajor != C.GSS_S_COMPLETE {
 		return nil, makeStatus(cMajor, cMinor)
@@ -298,7 +305,7 @@ func (c *Credential) StoreInto(mech g.GssMech, usage g.CredUsage, overwrite bool
 	cMechOid, pinner := oid2Coid(mechOid, nil)
 	defer pinner.Unpin()
 
-	cMajor := C._gss_store_cred_into(&cMinor, c.id, C.int(usage), cMechOid, cOverwrite, cDefaultCred, kv.kvset, &cElementsStored, &cUsageStored)
+	cMajor := C._gss_store_cred_into(&cMinor, c.id, C.int(usage), cMechOid, cOverwrite, cDefaultCred, kv.constSet(), &cElementsStored, &cUsageStored)
 
 	if cMajor != C.GSS_S_COMPLETE {
 		return nil, 0, makeStatus(cMajor, cMinor)
@@ -362,7 +369,7 @@ func (c *Credential) AddFrom(name g.GssName, mech g.GssMech, usage g.CredUsage, 
 		cpCredOut = &cCredOut
 	}
 
-	major := C._gss_add_cred_from(&minor, c.id, cGssName, cMechOid, C.int(usage), gssLifetimeToSeconds(initiatorLifetime), gssLifetimeToSeconds(acceptorLifetime), kv.kvset, cpCredOut, nil, nil, nil)
+	major := C._gss_add_cred_from(&minor, c.id, cGssName, cMechOid, C.int(usage), gssLifetimeToSeconds(initiatorLifetime), gssLifetimeToSeconds(acceptorLifetime), kv.constSet(), cpCredOut, nil, nil, nil)
 	if major != C.GSS_S_COMPLETE {
 		return nil, makeMechStatus(major, minor, mech)
 	}
@@ -370,6 +377,10 @@ func (c *Credential) AddFrom(name g.GssName, mech g.GssMech, usage g.CredUsage, 
 	if mutate {
 		return c, nil
 	} else {
-		return &Credential{id: cCredOut}, nil
+		return &Credential{
+			id:           cCredOut,
+			usage:        usage,
+			isFromNoName: cGssName == C.GSS_C_NO_NAME,
+		}, nil
 	}
 }

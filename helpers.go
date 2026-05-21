@@ -20,7 +20,7 @@ import (
 
 // Convert a Go OID to a string
 func oid2String(oid g.Oid) (string, error) {
-	objID := make(asn1.ObjectIdentifier, 100)
+	var objID asn1.ObjectIdentifier
 
 	oid = append([]byte{0x06, byte(len(oid))}, oid...)
 	_, err := asn1.Unmarshal(oid, &objID)
@@ -140,6 +140,30 @@ func gssLifetimeToSeconds(lifetime *g.GssLifetime) C.OM_uint32 {
 	default:
 		return C.OM_uint32(lifetime.ExpiresAt.Unix())
 	}
+}
+
+// gssRelease runs a GSSAPI release function on obj and converts its major/minor
+// status codes to a Go error via makeStatus.  Pass a typed shim such as
+// gssReleaseCred (cgo does not allow passing C.gss_release_cred as a Go func value).
+func gssRelease[T any](fn func(minor *C.OM_uint32, obj *T) C.OM_uint32, obj *T) error {
+	var minor C.OM_uint32
+	return makeStatus(fn(&minor, obj), minor)
+}
+
+func gssReleaseCred(minor *C.OM_uint32, cred *C.gss_cred_id_t) C.OM_uint32 {
+	return C.gss_release_cred(minor, cred)
+}
+
+func gssReleaseName(minor *C.OM_uint32, name *C.gss_name_t) C.OM_uint32 {
+	return C.gss_release_name(minor, name)
+}
+
+func gssReleaseBuffer(minor *C.OM_uint32, buf *C.gss_buffer_desc) C.OM_uint32 {
+	return C.gss_release_buffer(minor, buf)
+}
+
+func gssReleaseOidSet(minor *C.OM_uint32, set *C.gss_OID_set) C.OM_uint32 {
+	return C.gss_release_oid_set(minor, set)
 }
 
 func extractBufferSet(bs C.gss_buffer_set_t) [][]byte {

@@ -56,13 +56,14 @@ func mkChannelBindings(cb *g.ChannelBinding, pinner *runtime.Pinner) (C.gss_chan
 		pinner.Pin(addrBuf.value)
 	}
 
-	buf := C.gss_buffer_desc{
-		length: C.size_t(len(cb.Data)),
-		value:  unsafe.Pointer(&cb.Data[0]),
+	if len(cb.Data) > 0 {
+		buf := C.gss_buffer_desc{
+			length: C.size_t(len(cb.Data)),
+			value:  unsafe.Pointer(&cb.Data[0]),
+		}
+		C._set_cb_data(&cCB, buf)
+		pinner.Pin(&cb.Data[0])
 	}
-
-	C._set_cb_data(&cCB, buf)
-	pinner.Pin(&cb.Data[0])
 
 	return &cCB, pinner
 }
