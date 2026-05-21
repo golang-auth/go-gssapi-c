@@ -34,8 +34,8 @@ func oid2Coid(oid g.Oid, pinner *runtime.Pinner) (C.gss_OID, *runtime.Pinner) {
 	}
 
 	if len(oid) > 0 {
-		p := unsafe.Pointer(&oid[0])
 		pinner.Pin(&oid[0])
+		p := unsafe.Pointer(&oid[0])
 
 		return &C.gss_OID_desc{
 			length:   C.OM_uint32(len(oid)),
