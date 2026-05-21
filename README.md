@@ -1,5 +1,9 @@
 # Go-GSSAPI C bindings provider
 
+![GitHub tag (latest SemVer)](https://img.shields.io/github/v/tag/golang-auth/go-gssapi-c)
+[![Git Workflow](https://img.shields.io/github/actions/workflow/status/golang-auth/go-gssapi-c/full-tests.yml?branch=main/
+)](https://img.shields.io/github/actions/workflow/status/golang-auth/go-gssapi-c/full-tests.yml?branch=main)
+
 The go-gssapi-c package is a provider that implements the
 [Go GSSAPI][gssapi-v3] interfaces for access to a C library implementing
 RFC 2744.
