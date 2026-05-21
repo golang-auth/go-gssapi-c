@@ -178,7 +178,7 @@ jobs:
           uname -a
           if [ -e /etc/os-release ]; then cat /etc/os-release; fi
 
-    - name: Install Ubuntu upackages
+    - name: Install Ubuntu packages
       if: ${{ runner.os == 'Linux'}}
       run: |
           if [ "${{ matrix.krb5-version }}" = "mit" ]; then

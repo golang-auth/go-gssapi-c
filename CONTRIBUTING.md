@@ -12,7 +12,7 @@ Expect respectful collaboration, a focus on substance over perfection, and a wil
 Let’s build something great, together.
 
 
-## Community guideliens
+## Community guidelines
 
 We believe that open source thrives on respectful collaboration and a diversity of perspectives.  This
 leads to better solutions, more creativity, and a more engaging project.
@@ -33,7 +33,7 @@ This project is a Go wrapper around a C-based GSSAPI library. Contributions shou
 
 ### API Boundary
 The public API of this provider should only expose the interface described by the 
-[generic Go GSSAPI specification](https://github.com/golang-auth/go-gssapi/v3).
+[generic Go GSSAPI specification](https://pkg.go.dev/github.com/golang-auth/go-gssapi/v3).
 
 Exposing provider-specific functionality (e.g., for configuring the underlying C library) is discouraged as it
 dilutes the value of the provider independent interfaces. Such changes require careful review and should only be implemented when absolutely necessary.

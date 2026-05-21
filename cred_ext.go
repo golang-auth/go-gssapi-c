@@ -327,7 +327,6 @@ func (c *Credential) StoreInto(mech g.GssMech, usage g.CredUsage, overwrite bool
 		case err != nil:
 			return nil, 0, err
 		}
-		// If MechFromOid fails, skip that OID (could log or handle differently if desired)
 	}
 
 	return mechs, g.CredUsage(cUsageStored), nil
@@ -335,6 +334,12 @@ func (c *Credential) StoreInto(mech g.GssMech, usage g.CredUsage, overwrite bool
 
 // nolint:staticcheck //  Not sure how to test this!
 func (c *Credential) AddFrom(name g.GssName, mech g.GssMech, usage g.CredUsage, initiatorLifetime *g.GssLifetime, acceptorLifetime *g.GssLifetime, mutate bool, opts ...g.CredStoreOption) (g.Credential, error) { // coverage-ignore
+	// gss_add_cred_from is built on top of gss_add_cred, which is non-functional
+	// on Heimdal versions before the rewrite (signalled by gss_duplicate_cred).
+	if isHeimdal() && !isHeimdalWorkingAddCred() {
+		return nil, makeCustomStatus(C.GSS_S_UNAVAILABLE, fmt.Errorf("gss_add_cred_from is not available when using this version of Heimdal"))
+	}
+
 	var cMechOid C.gss_OID = C.GSS_C_NO_OID
 	pinner := &runtime.Pinner{}
 	defer pinner.Unpin()

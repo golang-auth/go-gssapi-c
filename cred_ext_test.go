@@ -365,5 +365,5 @@ func TestAddCredentialFrom(t *testing.T) {
 		t.SkipNow()
 	}
 
-	// TOODO: its not clear how to test this
+	// TODO: it's not clear how to test this
 }

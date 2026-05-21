@@ -54,12 +54,14 @@ func (o *oidSet) Release() error {
 	if o == nil || o.oidSet == nil {
 		return nil
 	}
+	defer o.pinner.Unpin()
 
 	var minor C.OM_uint32
 	cMajor := C.gss_release_oid_set(&minor, &o.oidSet)
 	if cMajor != C.GSS_S_COMPLETE {
 		return makeStatus(cMajor, minor)
 	}
-	o.pinner.Unpin()
+
 	return nil
+
 }

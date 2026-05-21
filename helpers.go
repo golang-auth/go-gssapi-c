@@ -158,14 +158,6 @@ func gssReleaseName(minor *C.OM_uint32, name *C.gss_name_t) C.OM_uint32 {
 	return C.gss_release_name(minor, name)
 }
 
-func gssReleaseBuffer(minor *C.OM_uint32, buf *C.gss_buffer_desc) C.OM_uint32 {
-	return C.gss_release_buffer(minor, buf)
-}
-
-func gssReleaseOidSet(minor *C.OM_uint32, set *C.gss_OID_set) C.OM_uint32 {
-	return C.gss_release_oid_set(minor, set)
-}
-
 func extractBufferSet(bs C.gss_buffer_set_t) [][]byte {
 	out := make([][]byte, bs.count)
 
