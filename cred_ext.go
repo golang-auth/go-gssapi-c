@@ -159,9 +159,8 @@ func (s credStore) kv() *kvset {
 
 	elms := make([]C.struct_gss_key_value_element_struct, 0, len(s))
 	for opt, value := range s {
-		elm := C.gss_key_value_element_desc{
-			value: C.CString(value),
-		}
+		elm := C.gss_key_value_element_desc{}
+
 		switch opt {
 		default:
 			continue
@@ -179,6 +178,7 @@ func (s credStore) kv() *kvset {
 			elm.key = C.CString("verify")
 		}
 
+		elm.value = C.CString(value)
 		elms = append(elms, elm)
 	}
 
@@ -209,9 +209,8 @@ func (k *kvset) Get(idx int) *C.struct_gss_key_value_element_struct {
 	if idx >= int(k.kvset.count) {
 		return nil
 	}
-	usp := unsafe.Pointer(k.kvset.elements)
-	usp = unsafe.Pointer(uintptr(usp) + uintptr(idx)*unsafe.Sizeof(C.struct_gss_key_value_element_struct{}))
-	return (*C.struct_gss_key_value_element_struct)(usp)
+	return (*C.struct_gss_key_value_element_struct)(
+		unsafe.Add(unsafe.Pointer(k.kvset.elements), idx*int(unsafe.Sizeof(C.struct_gss_key_value_element_struct{}))))
 }
 
 func (k *kvset) kv(idx int) (string, string) {
@@ -289,7 +288,7 @@ func (c *Credential) StoreInto(mech g.GssMech, usage g.CredUsage, overwrite bool
 	var cMinor C.OM_uint32
 	var cOverwrite, cDefaultCred C.OM_uint32
 	var cUsageStored C.gss_cred_usage_t
-	var cElementsStored C.gss_OID_set
+	var cElementsStored C.gss_OID_set // allocated by GSSAPI; released by *1
 	if overwrite {
 		cOverwrite = 1
 	}
@@ -304,6 +303,9 @@ func (c *Credential) StoreInto(mech g.GssMech, usage g.CredUsage, overwrite bool
 	if cMajor != C.GSS_S_COMPLETE {
 		return nil, 0, makeStatus(cMajor, cMinor)
 	}
+
+	// *1  release GSSAPI allocated array
+	defer C.gss_release_oid_set(&cMinor, &cElementsStored)
 
 	mechs := make([]g.GssMech, 0, cElementsStored.count)
 	mechOids := oidsFromGssOidSet(cElementsStored)
@@ -328,6 +330,7 @@ func (c *Credential) StoreInto(mech g.GssMech, usage g.CredUsage, overwrite bool
 func (c *Credential) AddFrom(name g.GssName, mech g.GssMech, usage g.CredUsage, initiatorLifetime *g.GssLifetime, acceptorLifetime *g.GssLifetime, mutate bool, opts ...g.CredStoreOption) (g.Credential, error) { // coverage-ignore
 	var cMechOid C.gss_OID = C.GSS_C_NO_OID
 	pinner := &runtime.Pinner{}
+	defer pinner.Unpin()
 	if mech != nil {
 		cMechOid, _ = oid2Coid(mech.Oid(), pinner)
 	}

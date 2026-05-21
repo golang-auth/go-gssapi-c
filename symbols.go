@@ -10,6 +10,7 @@ import (
 /*
 #include <dlfcn.h>
 #include <stdint.h>
+#include <stdlib.h>
 */
 import "C"
 
@@ -33,14 +34,16 @@ func readSymbols() {
 
 	cDlHandle := C.dlopen(nil, C.RTLD_NOW)
 	if cDlHandle == nil {
-		panic("faied to open library")
+		panic("failed to open library")
 	}
 
 	defer C.dlclose(cDlHandle)
 
 	for _, sym := range syms {
-		ptr := C.dlsym(cDlHandle, C.CString(sym))
+		symStr := C.CString(sym)
+		ptr := C.dlsym(cDlHandle, symStr)
 		optionalSymbols[sym] = ptr
+		C.free(unsafe.Pointer(symStr))
 	}
 }
 

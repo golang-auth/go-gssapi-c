@@ -1,6 +1,7 @@
 package gssapi
 
 import (
+	"fmt"
 	"runtime"
 
 	g "github.com/golang-auth/go-gssapi/v3"
@@ -36,7 +37,11 @@ func newOidSet(oids []g.Oid) (*oidSet, error) {
 		cOid, _ := oid2Coid(oid, ret.pinner)
 		cMajor := C.gss_add_oid_set_member(&cMinor, cOid, &ret.oidSet)
 		if cMajor != C.GSS_S_COMPLETE {
-			return nil, makeStatus(cMajor, cMinor)
+			err := makeStatus(cMajor, cMinor)
+			if errRel := ret.Release(); errRel != nil {
+				err = fmt.Errorf("oidset release failed (%w) while handling %w", errRel, err)
+			}
+			return nil, err
 		}
 	}
 
