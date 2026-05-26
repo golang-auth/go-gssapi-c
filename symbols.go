@@ -8,6 +8,7 @@ import (
 )
 
 /*
+#define _GNU_SOURCE
 #include <dlfcn.h>
 #include <stdint.h>
 #include <stdlib.h>

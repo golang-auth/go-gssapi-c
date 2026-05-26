@@ -12,7 +12,6 @@ import (
 
 /*
 #include "gss.h"
-#include <dlfcn.h>
 */
 import "C"
 
