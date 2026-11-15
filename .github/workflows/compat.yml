@@ -1,0 +1,188 @@
+name: Go/OS compatibility
+
+# Scheduled compatibility run: tests against the currently supported Go
+# releases (stable and oldstable, resolved from go.dev at run time so the
+# matrix never goes stale) on every platform this repository claims to support.
+
+on:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Test exactly the toolchain we installed; never auto-download a newer one.
+  GOTOOLCHAIN: local
+
+jobs:
+  go-versions:
+    name: Resolve supported Go releases
+    runs-on: ubuntu-latest
+    outputs:
+      stable: ${{ steps.resolve.outputs.stable }}
+      oldstable: ${{ steps.resolve.outputs.oldstable }}
+    steps:
+      - name: Look up stable and oldstable on go.dev
+        id: resolve
+        run: |
+          # go.dev lists the latest patch of each supported major release, newest first
+          json=$(curl -fsSL 'https://go.dev/dl/?mode=json')
+          stable=$(jq -r '[.[] | select(.stable)][0].version | ltrimstr("go")' <<<"$json")
+          oldstable=$(jq -r '[.[] | select(.stable)][1].version | ltrimstr("go")' <<<"$json")
+          test -n "$stable" -a -n "$oldstable"
+          echo "stable=$stable" >> "$GITHUB_OUTPUT"
+          echo "oldstable=$oldstable" >> "$GITHUB_OUTPUT"
+          echo "Go releases under test: stable=$stable oldstable=$oldstable" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  native:
+    name: ${{ matrix.os }} / ${{ matrix.krb5 }} / Go ${{ matrix.go }}
+    needs: go-versions
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        go: [stable, oldstable]
+        krb5: [base, mit, heimdal]
+        exclude:
+          - os: ubuntu-latest
+            krb5: base
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go ${{ needs.go-versions.outputs[matrix.go] }}
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ needs.go-versions.outputs[matrix.go] }}
+
+    - name: OS and Go details
+      run: |
+        uname -a
+        if [ -e /etc/os-release ]; then cat /etc/os-release; fi
+        go version
+
+    - name: Install Ubuntu packages
+      if: ${{ runner.os == 'Linux' }}
+      run: |
+        if [ "${{ matrix.krb5 }}" = "mit" ]; then
+          sudo apt-get install -y krb5-user libkrb5-dev pkg-config
+        fi
+        if [ "${{ matrix.krb5 }}" = "heimdal" ]; then
+          sudo apt-get install -y heimdal-dev pkg-config
+        fi
+
+    - name: Install MacOS packages
+      if: ${{ runner.os == 'macOS' }}
+      run: |
+        if [ "${{ matrix.krb5 }}" != "base" ]; then
+          if [ "${{ matrix.krb5 }}" = "mit" ]; then formula=krb5; else formula=heimdal; fi
+          brew install $formula
+          echo "PKG_CONFIG_PATH=$(brew --prefix $formula)/lib/pkgconfig" >>$GITHUB_ENV
+          echo 'TAGS=-tags usepkgconfig' >>$GITHUB_ENV
+        fi
+
+    - name: Run tests
+      timeout-minutes: 30
+      run: |
+        export OPENSSL_CONF=./openssl.cnf
+        go test ${TAGS} $(go list ./... | grep -v /examples/) -count 1 -timeout 30m
+
+  freebsd:
+    name: FreeBSD ${{ matrix.os-version }} / ${{ matrix.krb5 }} / Go ${{ matrix.go }}
+    needs: go-versions
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        go: [stable, oldstable]
+        krb5: [base, mit, heimdal]
+        os-version: ["14.4", "15.0"]
+        exclude:
+          - os-version: "15.0"
+            krb5: mit
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Test using FreeBSD VM
+      timeout-minutes: 45
+      uses: vmactions/freebsd-vm@v1
+      env:
+        GOVER: ${{ needs.go-versions.outputs[matrix.go] }}
+        KRB5: ${{ matrix.krb5 }}
+        OSVER: ${{ matrix.os-version }}
+      with:
+        release: ${{ matrix.os-version }}
+        envs: "GOVER KRB5 OSVER GOTOOLCHAIN"
+        prepare: |
+          PKGS="pkgconf ca_root_nss"
+          if [ "$KRB5" = "mit" ]; then PKGS="$PKGS krb5"; fi
+          if [ "$KRB5" = "heimdal" ]; then PKGS="$PKGS heimdal"; fi
+
+          if [ "$OSVER" = "15.0" -a "$KRB5" = "heimdal" ]; then
+            rm -f /etc/gss/mech
+            echo Working around FBSD/Heimdal port issue - removed /etc/gss/mech
+          fi
+
+          echo Installing packages: $PKGS
+          pkg install -y $PKGS
+
+          # Official Go release tarball, so the version matches go.dev exactly
+          fetch -o /tmp/go.tgz "https://go.dev/dl/go${GOVER}.freebsd-amd64.tar.gz"
+          tar -C /usr/local -xzf /tmp/go.tgz
+
+        run: |
+          export PATH=/usr/local/go/bin:$PATH
+
+          TAGS=""
+          if [ "$KRB5" != "base" -o "$OSVER" = "15.0" ]; then
+            TAGS="-tags usepkgconfig"
+          fi
+
+          uname -a
+          go version
+          if [ -n "$TAGS" ]; then
+            echo Kerberos package config:
+            pkg-config --libs krb5-gssapi
+            pkg-config --cflags krb5-gssapi
+          fi
+
+          export OPENSSL_CONF=./.openssl-rc4.conf
+          go test ${TAGS} -count 1
+
+  openbsd:
+    name: OpenBSD / heimdal / Go ${{ matrix.go }}
+    needs: go-versions
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        go: [stable, oldstable]
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Test using OpenBSD VM
+      timeout-minutes: 40
+      uses: vmactions/openbsd-vm@v1
+      env:
+        GOVER: ${{ needs.go-versions.outputs[matrix.go] }}
+      with:
+        envs: "GOVER GOTOOLCHAIN"
+        prepare: |
+          pkg_add heimdal
+          ftp -o /tmp/go.tgz "https://go.dev/dl/go${GOVER}.openbsd-amd64.tar.gz"
+          tar -C /usr/local -xzf /tmp/go.tgz
+
+        run: |
+          export PATH=/usr/local/go/bin:$PATH
+          export LD_LIBRARY_PATH=/usr/local/heimdal/lib
+          uname -a
+          go version
+          go test -count 1
